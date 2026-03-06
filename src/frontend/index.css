@@ -1,0 +1,191 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.25rem;
+
+    /* VERASLi Terminal-Dark Design Tokens */
+    /* Background: near-black with faint green tint */
+    --background: 0.08 0.005 145;
+    /* Surface: slightly lighter for panels/header */
+    --surface: 0.12 0.008 145;
+    /* Card: panel surface */
+    --card: 0.12 0.008 145;
+    --card-foreground: 0.82 0.22 145;
+    /* Popover */
+    --popover: 0.14 0.01 145;
+    --popover-foreground: 0.82 0.22 145;
+    /* Primary: terminal green */
+    --primary: 0.82 0.22 145;
+    --primary-foreground: 0.08 0.005 145;
+    /* Secondary: slightly dimmed green */
+    --secondary: 0.18 0.015 145;
+    --secondary-foreground: 0.82 0.22 145;
+    /* Muted: dimmed text */
+    --muted: 0.14 0.01 145;
+    --muted-foreground: 0.45 0.05 145;
+    /* Accent: amber */
+    --accent: 0.82 0.18 75;
+    --accent-foreground: 0.08 0.005 145;
+    /* Destructive */
+    --destructive: 0.65 0.22 25;
+    --destructive-foreground: 0.98 0 0;
+    /* Border: subtle green-tinted */
+    --border: 0.25 0.05 145;
+    --input: 0.25 0.05 145;
+    --ring: 0.82 0.22 145;
+    /* Foreground text */
+    --foreground: 0.82 0.22 145;
+    /* Chart colors */
+    --chart-1: 0.82 0.22 145;
+    --chart-2: 0.82 0.18 75;
+    --chart-3: 0.65 0.18 145;
+    --chart-4: 0.5 0.12 145;
+    --chart-5: 0.35 0.08 145;
+    /* Sidebar */
+    --sidebar: 0.12 0.008 145;
+    --sidebar-foreground: 0.82 0.22 145;
+    --sidebar-primary: 0.82 0.22 145;
+    --sidebar-primary-foreground: 0.08 0.005 145;
+    --sidebar-accent: 0.82 0.18 75;
+    --sidebar-accent-foreground: 0.08 0.005 145;
+    --sidebar-border: 0.25 0.05 145;
+    --sidebar-ring: 0.82 0.22 145;
+
+    /* VERASLi custom tokens */
+    --terminal-green: 0.82 0.22 145;
+    --terminal-green-dim: 0.55 0.15 145;
+    --terminal-green-glow: 0.9 0.25 145;
+    --terminal-amber: 0.82 0.18 75;
+    --terminal-amber-dim: 0.55 0.12 75;
+    --terminal-bg: 0.08 0.005 145;
+    --terminal-surface: 0.12 0.008 145;
+    --terminal-surface-raised: 0.15 0.012 145;
+    --terminal-border: 0.25 0.05 145;
+    --terminal-muted: 0.45 0.05 145;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 14px;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scrollbar styling for terminal feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: oklch(var(--terminal-bg));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: oklch(var(--terminal-border));
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(var(--terminal-green-dim));
+  }
+
+  /* Selection */
+  ::selection {
+    background: oklch(var(--terminal-green) / 0.25);
+    color: oklch(var(--terminal-green-glow));
+  }
+}
+
+/* Terminal grid background texture */
+.terminal-bg-grid {
+  background-image:
+    linear-gradient(
+      oklch(var(--terminal-green) / 0.03) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      oklch(var(--terminal-green) / 0.03) 1px,
+      transparent 1px
+    );
+  background-size: 32px 32px;
+}
+
+/* Scanline overlay effect */
+.terminal-scanlines::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    oklch(var(--terminal-bg) / 0.15) 2px,
+    oklch(var(--terminal-bg) / 0.15) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Terminal text glow effect */
+.text-glow-green {
+  text-shadow: 0 0 8px oklch(var(--terminal-green) / 0.6);
+}
+
+.text-glow-amber {
+  text-shadow: 0 0 8px oklch(var(--terminal-amber) / 0.5);
+}
+
+/* Cursor blink animation */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1.2s step-end infinite;
+}
+
+/* Tab active glow */
+@keyframes tab-activate {
+  from { opacity: 0; transform: scaleX(0.7); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+/* Boot sequence fade-in */
+@keyframes boot-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.boot-in {
+  animation: boot-in 0.3s ease-out forwards;
+}
+
+@keyframes type-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.type-in-1 { animation: type-in 0.15s ease-out 0.1s both; }
+.type-in-2 { animation: type-in 0.15s ease-out 0.35s both; }
+.type-in-3 { animation: type-in 0.15s ease-out 0.6s both; }
+.type-in-4 { animation: type-in 0.15s ease-out 0.85s both; }
+.type-in-5 { animation: type-in 0.15s ease-out 1.1s both; }
