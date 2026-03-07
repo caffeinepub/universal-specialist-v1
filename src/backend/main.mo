@@ -1,7 +1,7 @@
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
-import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
+import Text "mo:core/Text";
 
 actor {
   public type KnowledgeDoc = {
@@ -19,8 +19,31 @@ actor {
     createdAt : Int;
   };
 
+  public type ScanResult = {
+    id : Text;
+    timestamp : Int;
+    contextMode : Text;
+    analysisText : Text;
+    thumbnailSummary : Text;
+  };
+
+  public type SearchResult = {
+    title : Text;
+    snippet : Text;
+    url : Text;
+  };
+
+  public type AgenticResult = {
+    searchQuery : Text;
+    results : [SearchResult];
+    actionableSummary : Text;
+    contextMode : Text;
+    timestamp : Int;
+  };
+
   let knowledgeDocs = Map.empty<Principal, Map.Map<Text, KnowledgeDoc>>();
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
+  let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
   func getOrCreateUser<K, V>(store : Map.Map<Principal, Map.Map<K, V>>, user : Principal) : Map.Map<K, V> {
     switch (store.get(user)) {
@@ -73,5 +96,63 @@ actor {
 
   public shared ({ caller }) func whoami() : async Principal {
     caller;
+  };
+
+  public shared ({ caller }) func saveScanResult(result : ScanResult) : async () {
+    let userResults = getOrCreateUser(scanResults, caller);
+    userResults.add(result.id, result);
+  };
+
+  public shared ({ caller }) func deleteScanResult(id : Text) : async () {
+    switch (scanResults.get(caller)) {
+      case (?userResults) { userResults.remove(id) };
+      case (null) { Runtime.trap("No scan results found for this user") };
+    };
+  };
+
+  public query ({ caller }) func getScanResults() : async [ScanResult] {
+    switch (scanResults.get(caller)) {
+      case (?userResults) { userResults.values().toArray() };
+      case (null) { [] };
+    };
+  };
+
+  public shared ({ caller }) func webSearch(_query : Text) : async [SearchResult] {
+    [
+      {
+        title = "DuckDuckGo Search Requires TypeScript/JavaScript Client";
+        snippet = "DuckDuckGo's API returns complex JSON. Use frontend TS with fetch() for HTTP outcall and JSON deserialization. Extend to search any website, not just DuckDuckGo.";
+        url = "https://api.duckduckgo.com";
+      },
+    ];
+  };
+
+  func getSectorKeywords(mode : Text) : Text {
+    switch (mode) {
+      case ("healthcare") { "clinical protocol medical diagnosis treatment standard" };
+      case ("technology") { "technical specification API documentation engineering" };
+      case ("education") { "curriculum learning standard academic compliance" };
+      case ("construction") { "OSHA safety code structural specification building standard" };
+      case ("mechanics") { "repair manual torque spec OEM diagnostic procedure" };
+      case ("tactical-mechanic") { "repair manual torque specs OEM" };
+      case ("academic-auditor") { "OSHA compliance code safety standard" };
+      case ("environmental-command") { "OSHA EPA hazard protocol" };
+      case (_) { "technical specification reference manual" };
+    };
+  };
+
+  public shared func agenticScan(imageDescription : Text, contextMode : Text) : async AgenticResult {
+    let keywords = getSectorKeywords(contextMode);
+    {
+      searchQuery = "Missing_implementation: Use " # keywords # " with OpenAI backend for contextual search";
+      results = [{
+        title = "Missing_implementation - browser.fetch() enables universal web search";
+        snippet = "Add more search engines beyond DuckDuckGo. Use browser fetch() for limitless search. Python module not supported for now.";
+        url = "https://motoko-search-agent-ai/";
+      }];
+      actionableSummary = imageDescription # "\nContext mode: " # contextMode;
+      contextMode;
+      timestamp = 0;
+    };
   };
 };

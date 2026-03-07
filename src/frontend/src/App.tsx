@@ -1,12 +1,15 @@
 import { useState } from "react";
+import LiveVisionHUD from "./components/LiveVisionHUD";
 import TacticalMechanicView from "./components/TacticalMechanicView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ContextMode =
-  | "tactical-mechanic"
-  | "academic-auditor"
-  | "environmental-command";
+  | "healthcare"
+  | "technology"
+  | "education"
+  | "construction"
+  | "mechanics";
 
 interface TabConfig {
   id: ContextMode;
@@ -14,114 +17,135 @@ interface TabConfig {
   displayName: string;
   shortCode: string;
   dataOcid: string;
+  /** OKLCH accent — raw L C H values (no wrapper) */
+  accent: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS: TabConfig[] = [
   {
-    id: "tactical-mechanic",
-    label: "TACTICAL MECHANIC",
-    displayName: "TACTICAL MECHANIC",
-    shortCode: "TM-01",
+    id: "healthcare",
+    label: "Healthcare",
+    displayName: "Healthcare",
+    shortCode: "HC-01",
     dataOcid: "context.tab.1",
+    accent: "0.78 0.15 195",
   },
   {
-    id: "academic-auditor",
-    label: "ACADEMIC AUDITOR",
-    displayName: "ACADEMIC AUDITOR",
-    shortCode: "AA-02",
+    id: "technology",
+    label: "Technology",
+    displayName: "Technology",
+    shortCode: "TC-02",
     dataOcid: "context.tab.2",
+    accent: "0.65 0.18 250",
   },
   {
-    id: "environmental-command",
-    label: "ENVIRONMENTAL COMMAND",
-    displayName: "ENVIRONMENTAL COMMAND",
-    shortCode: "EC-03",
+    id: "education",
+    label: "Education",
+    displayName: "Education",
+    shortCode: "ED-03",
     dataOcid: "context.tab.3",
+    accent: "0.78 0.16 85",
+  },
+  {
+    id: "construction",
+    label: "Construction",
+    displayName: "Construction",
+    shortCode: "CS-04",
+    dataOcid: "context.tab.4",
+    accent: "0.72 0.18 45",
+  },
+  {
+    id: "mechanics",
+    label: "Mechanics",
+    displayName: "Mechanics",
+    shortCode: "MC-05",
+    dataOcid: "context.tab.5",
+    accent: "0.72 0.18 145",
   },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function CursorBlink() {
+/** Small monospace badge for system/context prefixes */
+function SysBadge({ label }: { label: string }) {
   return (
-    <span
-      className="cursor-blink inline-block w-2 h-4 bg-current align-middle ml-0.5"
-      aria-hidden="true"
-    />
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted text-muted-foreground border border-border select-none whitespace-nowrap">
+      {label}
+    </span>
   );
 }
 
 function PlaceholderContent({ mode }: { mode: TabConfig }) {
   const currentYear = new Date().getFullYear();
+  const accentColor = `oklch(${mode.accent})`;
 
   return (
-    <div
-      data-ocid="placeholder.section"
-      className="boot-in px-6 py-8 font-mono"
-    >
-      {/* Terminal prompt lines */}
-      <div className="space-y-2 text-sm sm:text-base">
-        <div className="type-in-1 flex items-center gap-2">
-          <span className="text-terminal-green-dim select-none">[SYS]</span>
-          <span className="text-terminal-muted">
-            VERASLI™ v1.0 — SPECIALIST MODE ACTIVE
+    <div data-ocid="placeholder.section" className="boot-in px-6 py-10">
+      {/* Status messages */}
+      <div className="space-y-3 text-sm max-w-2xl">
+        <div className="flex items-center gap-2.5">
+          <SysBadge label="[SYS]" />
+          <span className="text-muted-foreground">
+            VERASLi™ v2.0 — Universal Specialist Active
           </span>
         </div>
 
-        <div className="type-in-2 flex items-center gap-2">
-          <span className="text-terminal-green-dim select-none">[CTX]</span>
-          <span className="text-terminal-muted">
-            CONTEXT MODULE LOAD → {mode.shortCode}
+        <div className="flex items-center gap-2.5">
+          <SysBadge label="[CTX]" />
+          <span className="text-muted-foreground">
+            Sector Module Load → {mode.shortCode}
           </span>
         </div>
 
-        <div className="type-in-3 mt-6 flex items-start gap-2">
-          <span className="text-terminal-green select-none font-semibold">
-            &gt;
+        <div className="mt-6 flex items-start gap-2.5">
+          <span className="font-semibold mt-0.5" style={{ color: accentColor }}>
+            ›
           </span>
-          <span className="text-terminal-green font-semibold text-glow-green">
-            MODE: {mode.displayName} INITIALIZED.
-          </span>
-        </div>
-
-        <div className="type-in-4 flex items-start gap-2">
-          <span className="text-terminal-amber select-none font-semibold">
-            &gt;
-          </span>
-          <span className="text-terminal-amber font-semibold text-glow-amber">
-            AWAITING KNOWLEDGE DROP...
-            <CursorBlink />
+          <span className="text-foreground font-semibold">
+            Sector: {mode.displayName} Initialized.
           </span>
         </div>
 
-        <div className="type-in-5 mt-6 flex items-center gap-2">
-          <span className="text-terminal-green-dim select-none">[RDY]</span>
-          <span className="text-terminal-muted text-xs">
-            SYSTEM READY — DRAG &amp; DROP KNOWLEDGE FILES OR OPEN DATA GRID
+        <div className="flex items-start gap-2.5">
+          <span className="text-status-warning font-semibold mt-0.5">›</span>
+          <span className="text-status-warning font-medium">
+            Awaiting Knowledge Drop...
+          </span>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2.5">
+          <SysBadge label="[RDY]" />
+          <span className="text-muted-foreground text-xs">
+            System Ready — Drag &amp; drop knowledge files or open data grid
           </span>
         </div>
       </div>
 
-      {/* Status grid — decorative terminal readout */}
-      <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-xl">
-        <StatusCell label="CONTEXT" value={mode.shortCode} color="green" />
-        <StatusCell label="KNOWLEDGE SINK" value="EMPTY" color="amber" />
-        <StatusCell label="DATA GRID" value="STANDBY" color="muted" />
-        <StatusCell label="LOGIC FEED" value="OFFLINE" color="muted" />
-        <StatusCell label="TELEMETRY" value="SIMULATED" color="amber" />
-        <StatusCell label="OLLAMA API" value="NOT LINKED" color="muted" />
+      {/* Status metric cards */}
+      <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-2xl">
+        <StatusCell
+          label="Sector"
+          value={mode.shortCode}
+          color="ok"
+          accent={mode.accent}
+        />
+        <StatusCell label="Knowledge Sink" value="Empty" color="warning" />
+        <StatusCell label="Data Grid" value="Standby" color="offline" />
+        <StatusCell label="Logic Feed" value="Offline" color="offline" />
+        <StatusCell label="Telemetry" value="Simulated" color="warning" />
+        <StatusCell label="Ollama API" value="Not Linked" color="offline" />
       </div>
 
       {/* Footer attribution */}
-      <footer className="mt-16 pt-4 border-t border-terminal-border text-terminal-muted text-xs">
+      <footer className="mt-16 pt-4 border-t border-border text-muted-foreground text-xs">
         © {currentYear}.{" "}
         <a
           href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:text-terminal-green transition-colors duration-150"
+          className="hover:text-foreground transition-colors duration-150 underline underline-offset-2"
         >
           Built with ♥ using caffeine.ai
         </a>
@@ -133,23 +157,52 @@ function PlaceholderContent({ mode }: { mode: TabConfig }) {
 interface StatusCellProps {
   label: string;
   value: string;
-  color: "green" | "amber" | "muted";
+  color: "ok" | "warning" | "offline";
+  /** Optional OKLCH raw values for accent color override (L C H) */
+  accent?: string;
 }
 
-function StatusCell({ label, value, color }: StatusCellProps) {
+function StatusCell({ label, value, color, accent }: StatusCellProps) {
+  const dotClass =
+    color === "ok"
+      ? "status-dot-ok"
+      : color === "warning"
+        ? "status-dot-warning"
+        : "status-dot-offline";
+
   const valueClass =
-    color === "green"
-      ? "text-terminal-green text-glow-green"
-      : color === "amber"
-        ? "text-terminal-amber"
-        : "text-terminal-muted";
+    color === "ok"
+      ? accent
+        ? ""
+        : "text-status-ok"
+      : color === "warning"
+        ? "text-status-warning"
+        : "text-muted-foreground";
+
+  const valueStyle =
+    color === "ok" && accent ? { color: `oklch(${accent})` } : undefined;
 
   return (
-    <div className="border border-terminal-border bg-terminal-surface rounded p-2.5">
-      <div className="text-terminal-muted text-[10px] uppercase tracking-widest mb-1">
+    <div className="border border-border bg-card card-shadow-sm rounded-lg p-3.5">
+      <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide mb-2">
         {label}
       </div>
-      <div className={`font-semibold text-xs ${valueClass}`}>{value}</div>
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`}
+          style={
+            color === "ok" && accent
+              ? { background: `oklch(${accent})` }
+              : undefined
+          }
+        />
+        <span
+          className={`font-data font-semibold text-xs ${valueClass}`}
+          style={valueStyle}
+        >
+          {value}
+        </span>
+      </div>
     </div>
   );
 }
@@ -157,19 +210,28 @@ function StatusCell({ label, value, color }: StatusCellProps) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ContextMode>("tactical-mechanic");
+  const [activeTab, setActiveTab] = useState<ContextMode>("healthcare");
 
   const activeMode = TABS.find((t) => t.id === activeTab)!;
 
+  /** Called by LiveVisionHUD when the model auto-detects a sector */
+  const handleSectorDetected = (sector: string) => {
+    const normalized = sector.toLowerCase().trim();
+    const match = TABS.find((t) => t.id === normalized);
+    if (match) {
+      setActiveTab(match.id);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-terminal-bg terminal-bg-grid terminal-scanlines font-mono flex flex-col">
+    <div className="min-h-screen bg-background font-sans flex flex-col">
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header
         data-ocid="header.section"
-        className="fixed top-0 left-0 right-0 z-50 bg-terminal-surface border-b border-terminal-border h-14 flex items-center px-4 sm:px-6"
+        className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-border h-14 flex items-center px-4 sm:px-6"
         style={{
           boxShadow:
-            "0 1px 0 0 oklch(0.82 0.22 145 / 0.15), 0 2px 12px 0 oklch(0.08 0.005 145 / 0.8)",
+            "0 1px 0 oklch(var(--border)), 0 2px 16px oklch(0 0 0 / 0.4)",
         }}
       >
         {/* Left: icon + title */}
@@ -177,44 +239,45 @@ export default function App() {
           <img
             src="/assets/generated/verasli-neural-v-icon-transparent.dim_64x64.png"
             alt="VERASLi Neural V"
-            width={36}
-            height={36}
-            className="flex-shrink-0"
+            width={32}
+            height={32}
+            className="flex-shrink-0 opacity-90"
             style={{ imageRendering: "crisp-edges" }}
           />
-          <div className="flex items-baseline gap-2 min-w-0">
+          <div className="flex items-baseline gap-2.5 min-w-0">
             <span
-              className="text-terminal-green text-glow-green font-bold text-lg sm:text-xl tracking-tight leading-none truncate"
+              className="text-foreground font-bold text-[20px] tracking-tight leading-none truncate"
               aria-label="VERASLi"
+              style={{ fontFamily: "'Sora', sans-serif" }}
             >
               VERASLi™
             </span>
-            <span className="hidden sm:inline text-terminal-muted text-[11px] tracking-wider leading-none whitespace-nowrap">
-              UNIVERSAL SPECIALIST
+            <span className="hidden sm:inline text-muted-foreground text-[11px] font-medium leading-none whitespace-nowrap">
+              Universal Specialist
             </span>
           </div>
         </div>
 
         {/* Right: version tag */}
-        <div className="flex-shrink-0 text-right">
-          <span className="text-terminal-amber-dim text-[11px] tracking-widest leading-none whitespace-nowrap">
-            v1.0 {"//"}{" "}
-            <span className="text-terminal-amber">SPECIALIST MODE</span>
+        <div className="flex-shrink-0 flex items-center gap-2">
+          <span className="text-muted-foreground text-[11px] font-data whitespace-nowrap">
+            v2.0
+          </span>
+          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20">
+            Sector Routing Active
           </span>
         </div>
       </header>
 
       {/* ── Context Switcher Tab Bar ────────────────────────────────── */}
       <nav
-        className="fixed top-14 left-0 right-0 z-40 bg-terminal-surface border-b border-terminal-border"
-        aria-label="Context switcher"
-        style={{
-          boxShadow: "0 1px 0 0 oklch(0.82 0.22 145 / 0.1)",
-        }}
+        className="fixed top-14 left-0 right-0 z-40 bg-surface border-b border-border"
+        aria-label="Sector switcher"
       >
         <div className="flex items-stretch overflow-x-auto scrollbar-none">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
+            const accentColor = `oklch(${tab.accent})`;
             return (
               <button
                 type="button"
@@ -222,38 +285,31 @@ export default function App() {
                 data-ocid={tab.dataOcid}
                 onClick={() => setActiveTab(tab.id)}
                 className={[
-                  "relative flex-1 min-w-fit px-4 sm:px-6 py-3 text-xs sm:text-sm font-semibold tracking-widest uppercase whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-1 focus-visible:ring-terminal-green",
-                  isActive
-                    ? "text-terminal-green text-glow-green"
-                    : "text-terminal-muted hover:text-terminal-green-dim",
+                  "relative flex-1 min-w-fit px-4 sm:px-6 py-3 text-sm font-medium whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-1 focus-visible:ring-primary/50",
+                  isActive ? "" : "text-muted-foreground hover:text-foreground",
                 ].join(" ")}
+                style={isActive ? { color: accentColor } : undefined}
                 aria-selected={isActive}
                 role="tab"
               >
-                {/* Active indicator bar */}
+                {/* Short code prefix */}
+                <span
+                  className="mr-1.5 text-[10px] font-data opacity-60"
+                  aria-hidden="true"
+                >
+                  {tab.shortCode}
+                </span>
+                {tab.label}
+                {/* Active indicator bar with sector accent */}
                 {isActive && (
                   <span
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-terminal-green"
+                    className="absolute bottom-0 left-0 right-0 h-0.5"
                     style={{
-                      boxShadow: "0 0 8px oklch(0.82 0.22 145 / 0.8)",
+                      background: accentColor,
                       animation: "tab-activate 0.2s ease-out forwards",
                     }}
                   />
                 )}
-                {/* Bracket decoration on active */}
-                <span
-                  className={`transition-opacity duration-200 ${isActive ? "opacity-100" : "opacity-0"}`}
-                  aria-hidden="true"
-                >
-                  [
-                </span>
-                {tab.label}
-                <span
-                  className={`transition-opacity duration-200 ${isActive ? "opacity-100" : "opacity-0"}`}
-                  aria-hidden="true"
-                >
-                  ]
-                </span>
               </button>
             );
           })}
@@ -265,10 +321,16 @@ export default function App() {
         data-ocid="main.panel"
         className="flex-1 pt-28 overflow-auto"
         role="tabpanel"
-        aria-label={`${activeMode.displayName} context`}
+        aria-label={`${activeMode.displayName} sector`}
       >
-        {activeTab === "tactical-mechanic" ? (
-          <TacticalMechanicView key="tactical-mechanic" />
+        {activeTab === "mechanics" ? (
+          <TacticalMechanicView key="mechanics" />
+        ) : activeTab === "construction" ? (
+          <LiveVisionHUD
+            key="construction"
+            contextMode="construction"
+            onSectorDetected={handleSectorDetected}
+          />
         ) : (
           <PlaceholderContent key={activeTab} mode={activeMode} />
         )}

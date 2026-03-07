@@ -1,0 +1,1484 @@
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Eye,
+  Loader2,
+  ScanLine,
+  Search,
+  Trash2,
+  VideoOff,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ScanResult, SearchResult } from "../backend";
+import { useActor } from "../hooks/useActor";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type CameraState = "idle" | "requesting" | "granted" | "denied";
+type ScanState =
+  | "idle"
+  | "detecting"
+  | "identifying"
+  | "searching"
+  | "synthesizing"
+  | "success"
+  | "error";
+
+export interface LiveVisionHUDProps {
+  contextMode: string;
+  onSectorDetected?: (sector: string) => void;
+}
+
+// ─── Sector Accent Colors ─────────────────────────────────────────────────────
+
+const SECTOR_ACCENTS: Record<string, string> = {
+  healthcare: "0.78 0.15 195",
+  technology: "0.65 0.18 250",
+  education: "0.78 0.16 85",
+  construction: "0.72 0.18 45",
+  mechanics: "0.72 0.18 145",
+};
+
+const SECTOR_LABELS: Record<string, string> = {
+  healthcare: "HEALTHCARE",
+  technology: "TECHNOLOGY",
+  education: "EDUCATION",
+  construction: "CONSTRUCTION",
+  mechanics: "MECHANICS",
+};
+
+function getSectorAccent(mode: string): string {
+  return SECTOR_ACCENTS[mode] ?? SECTOR_ACCENTS.construction;
+}
+
+function getSectorLabel(mode: string): string {
+  return SECTOR_LABELS[mode] ?? mode.toUpperCase();
+}
+
+// ─── Context Prompts ──────────────────────────────────────────────────────────
+
+/**
+ * Returns a prompt that instructs the model to respond ONLY with a JSON object:
+ * { "detected_mode": "<one of 5 sectors>", "image_description": "..." }
+ */
+function getIdentificationPrompt(): string {
+  return `You are an autonomous sector identification specialist. Analyze the image and determine which enterprise sector it belongs to.
+
+Return ONLY a valid JSON object with exactly these two fields:
+{
+  "detected_mode": "<sector>",
+  "image_description": "<detailed description>"
+}
+
+The "detected_mode" field MUST be one of these exact values:
+- "healthcare" — if you see: medical equipment, hospital settings, clinical tools, patients, doctors, nurses, medicine, lab instruments, anatomical charts, surgical tools
+- "technology" — if you see: computers, servers, electronic components, code, circuit boards, data centers, software interfaces, network hardware, monitors, tech devices
+- "education" — if you see: classrooms, textbooks, whiteboards, blackboards, academic materials, students, teachers, desks, books, learning tools, educational signage
+- "construction" — if you see: building sites, scaffolding, construction tools, PPE, hard hats, safety vests, concrete, steel beams, blueprints, cranes, power tools
+- "mechanics" — if you see: vehicles, engines, automotive parts, garages, car lifts, wrenches, diagnostic tools, exhaust systems, tires, transmissions
+
+The "image_description" field should be a detailed technical breakdown of what you observe.
+
+Respond with ONLY the JSON object. No explanation, no preamble, no markdown.`;
+}
+
+function getContextSuffix(contextMode: string): string {
+  switch (contextMode) {
+    case "healthcare":
+      return "clinical protocol medical diagnosis treatment";
+    case "technology":
+      return "technical documentation API specification";
+    case "education":
+      return "curriculum academic standard compliance";
+    case "construction":
+      return "OSHA safety code building specification";
+    case "mechanics":
+      return "repair manual torque spec OEM diagnostic";
+    default:
+      return "technical specifications manual";
+  }
+}
+
+// ─── Search Query Builder ─────────────────────────────────────────────────────
+
+const FILLER_WORDS = new Set([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "by",
+  "from",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "can",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "there",
+  "their",
+  "they",
+  "any",
+  "some",
+  "i",
+  "visible",
+  "image",
+  "shows",
+  "showing",
+  "appears",
+  "appear",
+  "note",
+  "potential",
+  "possible",
+  "also",
+  "see",
+  "look",
+  "looks",
+  "output",
+]);
+
+function buildSearchQuery(
+  imageDescription: string,
+  contextMode: string,
+): string {
+  const suffix = getContextSuffix(contextMode);
+  const raw = imageDescription.slice(0, 120);
+  const words = raw
+    .replace(/[^\w\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !FILLER_WORDS.has(w.toLowerCase()));
+  const keyTerms = words.slice(0, 12).join(" ");
+  const query = `${keyTerms} ${suffix}`.trim().slice(0, 150);
+  return query;
+}
+
+// ─── DuckDuckGo Search ────────────────────────────────────────────────────────
+
+interface ParsedResult {
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+interface DDGRelatedTopic {
+  Text?: string;
+  FirstURL?: string;
+  Topics?: DDGRelatedTopic[];
+}
+
+interface DDGResponse {
+  AbstractText?: string;
+  AbstractURL?: string;
+  RelatedTopics?: DDGRelatedTopic[];
+}
+
+async function duckDuckGoSearch(query: string): Promise<ParsedResult[]> {
+  const encoded = encodeURIComponent(query);
+  const url = `https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`DDG HTTP ${response.status}`);
+  const data = (await response.json()) as DDGResponse;
+
+  const results: ParsedResult[] = [];
+
+  // Priority 1: AbstractText
+  if (data.AbstractText && data.AbstractURL) {
+    results.push({
+      title: data.AbstractText.slice(0, 80),
+      snippet: data.AbstractText,
+      url: data.AbstractURL,
+    });
+  }
+
+  // Priority 2: RelatedTopics (skip sub-topic groups)
+  if (data.RelatedTopics) {
+    for (const topic of data.RelatedTopics) {
+      if (results.length >= 4) break;
+      if (!topic.Text || !topic.FirstURL || topic.Topics) continue;
+      results.push({
+        title: topic.Text.slice(0, 80),
+        snippet: topic.Text,
+        url: topic.FirstURL,
+      });
+    }
+  }
+
+  return results.slice(0, 4);
+}
+
+function buildActionableSummary(
+  query: string,
+  results: ParsedResult[],
+): string {
+  if (results.length === 0) {
+    return `SEARCH EXECUTED: ${query}\n\nNo indexed results returned. Try refining the scan or check connectivity.`;
+  }
+  const findings = results.map((r, i) => `${i + 1}. ${r.snippet}`).join("\n\n");
+  return `QUERY: ${query}\n\nFINDINGS:\n${findings}`;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+function formatTimestamp(ts: bigint): string {
+  const ms = Number(ts);
+  return new Date(ms).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+// ─── Sector Lock Notification ─────────────────────────────────────────────────
+
+interface SectorLockBadgeProps {
+  sectorName: string;
+  accent: string;
+  visible: boolean;
+}
+
+function SectorLockBadge({
+  sectorName,
+  accent,
+  visible,
+}: SectorLockBadgeProps) {
+  return (
+    <div
+      aria-live="polite"
+      aria-label={visible ? `Context locked: ${sectorName}` : undefined}
+      className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none"
+      style={{
+        transition: "opacity 0.35s ease, transform 0.35s ease",
+        opacity: visible ? 1 : 0,
+        transform: visible
+          ? "translateX(-50%) translateY(0)"
+          : "translateX(-50%) translateY(-8px)",
+      }}
+    >
+      <div
+        className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] font-data font-semibold tracking-widest uppercase border"
+        style={{
+          background: `oklch(${accent} / 0.12)`,
+          borderColor: `oklch(${accent} / 0.4)`,
+          color: `oklch(${accent})`,
+          boxShadow: `0 2px 16px oklch(${accent} / 0.25)`,
+        }}
+      >
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+          style={{ background: `oklch(${accent})` }}
+        />
+        CONTEXT LOCKED: {sectorName}
+      </div>
+    </div>
+  );
+}
+
+// ─── Phase Status Label ───────────────────────────────────────────────────────
+
+function PhaseStatusLabel({
+  state,
+  accentColor,
+}: {
+  state: ScanState;
+  accentColor: string;
+}) {
+  const color = accentColor;
+
+  if (state === "detecting") {
+    return (
+      <div
+        data-ocid="hud.loading_state"
+        className="flex items-center gap-2 text-xs font-data"
+        style={{ color }}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+        <span>PHASE 1 — AUTO-DETECTING ENVIRONMENT...</span>
+      </div>
+    );
+  }
+  if (state === "identifying") {
+    return (
+      <div
+        data-ocid="hud.loading_state"
+        className="flex items-center gap-2 text-xs font-data"
+        style={{ color }}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+        <span>PHASE 1 — VISION SCAN: Identifying via LLaVA...</span>
+      </div>
+    );
+  }
+  if (state === "searching") {
+    return (
+      <div
+        data-ocid="hud.loading_state"
+        className="flex items-center gap-2 text-xs font-data"
+        style={{ color }}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+        <span>PHASE 2 — WEB SEARCH: Querying live data sources...</span>
+      </div>
+    );
+  }
+  if (state === "synthesizing") {
+    return (
+      <div
+        data-ocid="hud.loading_state"
+        className="flex items-center gap-2 text-xs font-data"
+        style={{ color }}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+        <span>PHASE 3 — SYNTHESIS: Compiling actionable intelligence...</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+// ─── Agentic Result Display ───────────────────────────────────────────────────
+
+interface AgenticResultDisplayProps {
+  summary: string;
+  searchQuery: string;
+  sources: ParsedResult[];
+}
+
+function AgenticResultDisplay({
+  summary,
+  searchQuery,
+  sources,
+}: AgenticResultDisplayProps) {
+  const isAgenticResult = summary.startsWith("QUERY:");
+  const displayText = isAgenticResult
+    ? summary.split("\n\nFINDINGS:\n").slice(1).join("\n\nFINDINGS:\n") ||
+      summary
+    : summary;
+
+  return (
+    <div className="space-y-2">
+      {/* Summary text */}
+      <p className="text-white/90 text-xs font-data leading-relaxed line-clamp-4">
+        {displayText}
+      </p>
+
+      {/* Query badge */}
+      {searchQuery && (
+        <div
+          data-ocid="hud.search_query_display"
+          className="flex items-start gap-1.5"
+        >
+          <span className="flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-data font-semibold bg-white/5 text-white/40 border border-white/10 select-none uppercase tracking-wider">
+            QUERY
+          </span>
+          <span className="text-white/40 text-[10px] font-data leading-tight break-all">
+            {searchQuery}
+          </span>
+        </div>
+      )}
+
+      {/* Source links */}
+      {sources.length > 0 && (
+        <div
+          data-ocid="hud.sources_panel"
+          className="flex flex-wrap gap-1.5 items-center"
+        >
+          <span className="text-white/30 text-[9px] font-data uppercase tracking-wider flex-shrink-0">
+            [SRC]
+          </span>
+          {sources.slice(0, 3).map((src, idx) => (
+            <a
+              key={src.url}
+              href={src.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-ocid={`hud.source_link.${idx + 1}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 text-white/50 hover:text-white/80 text-[9px] font-data transition-colors duration-150"
+              title={src.title}
+            >
+              <ExternalLink className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="max-w-[100px] truncate">
+                {src.title.slice(0, 30) || "Source"}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Corner Bracket ───────────────────────────────────────────────────────────
+
+interface CornerBracketProps {
+  position: "tl" | "tr" | "bl" | "br";
+  color?: string;
+}
+
+function CornerBracket({ position, color }: CornerBracketProps) {
+  const posClass = {
+    tl: "top-3 left-3",
+    tr: "top-3 right-3",
+    bl: "bottom-3 left-3",
+    br: "bottom-3 right-3",
+  }[position];
+
+  const borderClass = {
+    tl: "border-t border-l",
+    tr: "border-t border-r",
+    bl: "border-b border-l",
+    br: "border-b border-r",
+  }[position];
+
+  return (
+    <div
+      className={`absolute ${posClass} w-6 h-6 ${borderClass} pointer-events-none`}
+      style={{ borderColor: color ?? "oklch(1 0 0 / 0.2)" }}
+      aria-hidden="true"
+    />
+  );
+}
+
+// ─── Scan History Item ────────────────────────────────────────────────────────
+
+interface HistoryItemProps {
+  result: ScanResult;
+  index: number;
+  onDelete: (id: string) => void;
+}
+
+function HistoryItem({ result, index, onDelete }: HistoryItemProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const isAgenticResult = result.analysisText.startsWith("QUERY:");
+  let queryLine = "";
+  let findingsText = result.analysisText;
+
+  if (isAgenticResult) {
+    const parts = result.analysisText.split("\n\nFINDINGS:\n");
+    queryLine = parts[0].replace("QUERY: ", "").trim();
+    findingsText = parts[1] ?? result.analysisText;
+  }
+
+  const isLong = findingsText.length > 200;
+  const sectorLabel =
+    SECTOR_LABELS[result.contextMode] ?? result.contextMode.toUpperCase();
+  const sectorAccent = SECTOR_ACCENTS[result.contextMode];
+  const badgeStyle = sectorAccent
+    ? {
+        background: `oklch(${sectorAccent} / 0.12)`,
+        color: `oklch(${sectorAccent})`,
+        borderColor: `oklch(${sectorAccent} / 0.3)`,
+      }
+    : undefined;
+
+  return (
+    <div
+      data-ocid={`hud.history_item.${index}`}
+      className="border border-border bg-card rounded-lg p-4 space-y-2 hover:bg-surface-raised transition-colors duration-150"
+    >
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium border select-none"
+              style={
+                badgeStyle ?? {
+                  background: "oklch(var(--primary) / 0.1)",
+                  color: "oklch(var(--primary))",
+                  borderColor: "oklch(var(--primary) / 0.2)",
+                }
+              }
+            >
+              {sectorAccent ? `[${sectorLabel}]` : "[AGT]"}
+            </span>
+            {isAgenticResult && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-data bg-muted/50 text-muted-foreground border border-border select-none">
+                <Search className="w-2.5 h-2.5" />
+                WEB SEARCH
+              </span>
+            )}
+            <span className="text-muted-foreground text-[10px] font-data">
+              {formatTimestamp(result.timestamp)}
+            </span>
+          </div>
+          {result.thumbnailSummary && (
+            <div className="text-xs font-medium text-muted-foreground mb-1 font-data">
+              {result.thumbnailSummary}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          data-ocid={`hud.delete_button.${index}`}
+          onClick={() => onDelete(result.id)}
+          className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-destructive hover:bg-destructive/10 border border-destructive/30 hover:border-destructive/50 transition-colors duration-150 font-medium"
+          aria-label="Delete scan result"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+
+      {/* Query line (agentic results only) */}
+      {isAgenticResult && queryLine && (
+        <div className="flex items-start gap-1.5 pb-1 border-b border-border/50">
+          <span className="flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-data font-semibold bg-muted/50 text-muted-foreground border border-border select-none uppercase tracking-wider">
+            QUERY
+          </span>
+          <span className="text-muted-foreground text-[10px] font-data leading-tight break-all">
+            {queryLine}
+          </span>
+        </div>
+      )}
+
+      {/* Analysis / findings text */}
+      <div className="text-foreground/90 text-sm font-data leading-relaxed">
+        <p className={!expanded && isLong ? "line-clamp-3" : ""}>
+          {findingsText}
+        </p>
+        {isLong && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1.5 flex items-center gap-1 text-primary text-xs hover:text-primary/80 transition-colors"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-3 h-3" /> Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3" /> Expand
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export default function LiveVisionHUD({
+  contextMode,
+  onSectorDetected,
+}: LiveVisionHUDProps) {
+  const { actor, isFetching } = useActor();
+
+  // Camera state
+  const [cameraState, setCameraState] = useState<CameraState>("idle");
+  const [scanState, setScanState] = useState<ScanState>("idle");
+  const [scanResult, setScanResult] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sources, setSources] = useState<ParsedResult[]>([]);
+  const [autoPulse, setAutoPulse] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(() => {
+    const stored = localStorage.getItem("verasli_web_search");
+    return stored !== null ? stored === "true" : true;
+  });
+
+  // Sector detection state
+  const [detectedSector, setDetectedSector] = useState<string>(contextMode);
+  const [sectorLocked, setSectorLocked] = useState(false);
+
+  // History
+  const [history, setHistory] = useState<ScanResult[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sectorLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Derive accent from detected sector (falls back to contextMode, then construction)
+  const activeSector = detectedSector || contextMode;
+  const accentValues = getSectorAccent(activeSector);
+  const accentColor = `oklch(${accentValues})`;
+  const sectorDisplayName = getSectorLabel(activeSector);
+
+  // Persist web search toggle
+  const handleWebSearchToggle = (value: boolean) => {
+    setWebSearchEnabled(value);
+    localStorage.setItem("verasli_web_search", value.toString());
+  };
+
+  // ── Load history ────────────────────────────────────────────────────────────
+
+  const loadHistory = useCallback(async () => {
+    if (!actor) return;
+    setHistoryLoading(true);
+    try {
+      const results = await actor.getScanResults();
+      const sectorResults = results.filter(
+        (r) =>
+          r.contextMode === contextMode ||
+          r.contextMode === detectedSector ||
+          // Include legacy mode names for backward compatibility
+          r.contextMode === "environmental-command",
+      );
+      setHistory(
+        [...sectorResults].sort((a, b) =>
+          b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0,
+        ),
+      );
+    } catch {
+      // silently fail
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [actor, contextMode, detectedSector]);
+
+  useEffect(() => {
+    if (actor && !isFetching) {
+      void loadHistory();
+    }
+  }, [actor, isFetching, loadHistory]);
+
+  // Cleanup sector lock timer on unmount
+  useEffect(() => {
+    return () => {
+      if (sectorLockTimerRef.current) {
+        clearTimeout(sectorLockTimerRef.current);
+      }
+    };
+  }, []);
+
+  // ── Camera activation ───────────────────────────────────────────────────────
+
+  const activateCamera = async () => {
+    setCameraState("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setCameraState("granted");
+    } catch {
+      setCameraState("denied");
+    }
+  };
+
+  // ── Frame capture & agentic scan ─────────────────────────────────────────────
+
+  const captureAndScan = useCallback(async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    // Draw frame to canvas
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Get base64
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+    const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+
+    // Get Ollama endpoint from localStorage
+    const endpoint =
+      localStorage.getItem("verasli_ollama_endpoint") ||
+      "http://localhost:11434";
+
+    setScanState("detecting");
+    setScanResult("");
+    setSearchQuery("");
+    setSources([]);
+
+    // ── Phase 1: Vision Identification + Auto-Detection ───────────────────────
+    let imageDescription = "";
+    let resolvedMode = contextMode;
+
+    try {
+      const prompt = getIdentificationPrompt();
+      const response = await fetch(`${endpoint}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "llava",
+          prompt,
+          images: [base64],
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = (await response.json()) as { response?: string };
+      const rawResponse = data.response ?? "";
+
+      // Try to parse JSON response
+      setScanState("identifying");
+      try {
+        // Strip any markdown code block wrappers if present
+        const cleaned = rawResponse
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```\s*$/, "")
+          .trim();
+        const parsed = JSON.parse(cleaned) as {
+          detected_mode?: string;
+          image_description?: string;
+        };
+
+        const validModes = [
+          "healthcare",
+          "technology",
+          "education",
+          "construction",
+          "mechanics",
+        ];
+
+        if (
+          parsed.detected_mode &&
+          validModes.includes(parsed.detected_mode.toLowerCase())
+        ) {
+          resolvedMode = parsed.detected_mode.toLowerCase();
+          imageDescription = parsed.image_description ?? rawResponse;
+
+          // Show sector lock notification and call parent callback
+          setDetectedSector(resolvedMode);
+          setSectorLocked(true);
+          if (sectorLockTimerRef.current)
+            clearTimeout(sectorLockTimerRef.current);
+          sectorLockTimerRef.current = setTimeout(() => {
+            setSectorLocked(false);
+            sectorLockTimerRef.current = null;
+          }, 2000);
+          onSectorDetected?.(resolvedMode);
+
+          // Wait 2s for the notification to be visible before proceeding
+          await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        } else {
+          // JSON parsed but no valid detected_mode — use full response as description
+          imageDescription = parsed.image_description ?? rawResponse;
+        }
+      } catch {
+        // JSON parse failed — use full response as image description
+        imageDescription = rawResponse || "No response from model.";
+      }
+    } catch {
+      setScanState("error");
+      setScanResult("PHASE 1 FAILED — Ollama not reachable. Check endpoint.");
+      return;
+    }
+
+    // If web search is disabled, save vision-only result
+    if (!webSearchEnabled) {
+      setScanResult(imageDescription);
+      setScanState("synthesizing");
+
+      if (actor) {
+        const scanRecord: ScanResult = {
+          id: generateId(),
+          contextMode: resolvedMode,
+          analysisText: imageDescription,
+          timestamp: BigInt(Date.now()),
+          thumbnailSummary: `Vision scan [${getSectorLabel(resolvedMode)}] — ${new Date().toLocaleTimeString()}`,
+        };
+        try {
+          await actor.saveScanResult(scanRecord);
+          await loadHistory();
+        } catch {
+          // non-fatal
+        }
+      }
+
+      setScanState("success");
+      return;
+    }
+
+    // ── Phase 2: Agentic Web Search ───────────────────────────────────────────
+    setScanState("searching");
+    const query = buildSearchQuery(imageDescription, resolvedMode);
+    setSearchQuery(query);
+
+    let parsedResults: ParsedResult[] = [];
+    let webSearchFailed = false;
+
+    try {
+      parsedResults = await duckDuckGoSearch(query);
+    } catch {
+      webSearchFailed = true;
+    }
+
+    // ── Phase 3: Synthesis ────────────────────────────────────────────────────
+    setScanState("synthesizing");
+
+    let actionableSummary: string;
+    if (webSearchFailed) {
+      actionableSummary = `${imageDescription}\n\nWEB SEARCH UNAVAILABLE — Showing vision-only analysis.`;
+    } else {
+      actionableSummary = buildActionableSummary(query, parsedResults);
+    }
+
+    setScanResult(actionableSummary);
+    setSources(parsedResults);
+
+    // Call backend agenticScan for record-keeping
+    if (actor) {
+      try {
+        await actor.agenticScan(imageDescription, resolvedMode);
+      } catch {
+        // non-fatal
+      }
+
+      const backendSources: SearchResult[] = parsedResults.map((r) => ({
+        url: r.url,
+        title: r.title,
+        snippet: r.snippet,
+      }));
+
+      const scanRecord: ScanResult = {
+        id: generateId(),
+        contextMode: resolvedMode,
+        analysisText: actionableSummary,
+        timestamp: BigInt(Date.now()),
+        thumbnailSummary: webSearchFailed
+          ? `Vision-only scan [${getSectorLabel(resolvedMode)}] — ${new Date().toLocaleTimeString()}`
+          : `Agentic scan (${backendSources.length} sources) [${getSectorLabel(resolvedMode)}] — ${new Date().toLocaleTimeString()}`,
+      };
+
+      try {
+        await actor.saveScanResult(scanRecord);
+        await loadHistory();
+      } catch {
+        // non-fatal — result still displayed
+      }
+    }
+
+    setScanState("success");
+  }, [contextMode, webSearchEnabled, loadHistory, actor, onSectorDetected]);
+
+  // ── Auto-pulse interval ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (autoPulse && cameraState === "granted") {
+      intervalRef.current = setInterval(() => {
+        void captureAndScan();
+      }, 5000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [autoPulse, cameraState, captureAndScan]);
+
+  // ── Cleanup on unmount ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        for (const t of streamRef.current.getTracks()) {
+          t.stop();
+        }
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  // ── Delete history item ──────────────────────────────────────────────────────
+
+  const handleDeleteResult = async (id: string) => {
+    if (!actor) return;
+    try {
+      await actor.deleteScanResult(id);
+      setHistory((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // silently fail
+    }
+  };
+
+  // Determine if currently scanning (any active phase)
+  const isScanning =
+    scanState === "detecting" ||
+    scanState === "identifying" ||
+    scanState === "searching" ||
+    scanState === "synthesizing";
+
+  // ─── Render: idle ────────────────────────────────────────────────────────────
+
+  if (cameraState === "idle") {
+    return (
+      <div
+        data-ocid="hud.panel"
+        className="boot-in flex flex-col items-center justify-center px-6"
+        style={{ minHeight: "calc(100vh - 112px)" }}
+      >
+        {/* Icon */}
+        <div className="mb-6 relative">
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center"
+            style={{
+              background:
+                "radial-gradient(circle at 40% 35%, oklch(0.28 0.012 250), oklch(0.15 0.006 250))",
+              boxShadow: `0 0 0 1px oklch(var(--border)), 0 0 32px ${accentColor.replace(")", " / 0.12)")}`,
+            }}
+          >
+            <Eye className="w-9 h-9" style={{ color: accentColor }} />
+          </div>
+          {/* Outer pulse ring decoration */}
+          <div
+            className="absolute inset-0 rounded-full border"
+            style={{
+              transform: "scale(1.3)",
+              borderColor: accentColor.replace(")", " / 0.2)"),
+            }}
+            aria-hidden="true"
+          />
+        </div>
+
+        {/* Title */}
+        <h1 className="text-2xl font-bold text-foreground tracking-tight mb-1">
+          LIVE VISION HUD
+        </h1>
+        <p className="text-muted-foreground text-sm mb-2 font-data">
+          Autonomous Sector Detection Module
+        </p>
+        <div className="flex items-center gap-2 mb-4">
+          <span
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium border select-none"
+            style={{
+              background: accentColor.replace(")", " / 0.1)"),
+              color: accentColor,
+              borderColor: accentColor.replace(")", " / 0.2)"),
+            }}
+          >
+            [{getSectorLabel(contextMode).slice(0, 2)}-
+            {contextMode === "healthcare"
+              ? "01"
+              : contextMode === "technology"
+                ? "02"
+                : contextMode === "education"
+                  ? "03"
+                  : contextMode === "construction"
+                    ? "04"
+                    : "05"}
+            ]
+          </span>
+          <span className="text-muted-foreground text-xs font-data">
+            Ollama / LLaVA Vision Bridge Ready
+          </span>
+        </div>
+        <div className="flex items-center gap-2 mb-8">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted/50 text-muted-foreground border border-border select-none">
+            <Search className="w-2.5 h-2.5" />
+            {webSearchEnabled ? "WEB SEARCH: ON" : "WEB SEARCH: OFF"}
+          </span>
+        </div>
+
+        {/* Activate button */}
+        <button
+          type="button"
+          data-ocid="hud.activate_button"
+          onClick={() => void activateCamera()}
+          className="flex items-center gap-2.5 px-6 py-3 rounded-lg font-semibold text-sm hover:opacity-90 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          style={{
+            background: accentColor,
+            color: "oklch(0.1 0 0)",
+            boxShadow: `0 4px 20px ${accentColor.replace(")", " / 0.3)")}`,
+          }}
+        >
+          <ScanLine className="w-4 h-4" />
+          ACTIVATE CAMERA
+        </button>
+
+        {/* Disclaimer */}
+        <p className="mt-5 text-muted-foreground text-xs text-center max-w-xs leading-relaxed">
+          This module accesses your device camera. Rear-facing camera will be
+          preferred when available. Sector is auto-detected from the image.
+        </p>
+
+        {/* Scan history below */}
+        <div className="w-full max-w-2xl mt-12">
+          <ScanHistorySection
+            history={history}
+            loading={historyLoading}
+            onDelete={handleDeleteResult}
+          />
+        </div>
+
+        {/* Footer */}
+        <footer className="mt-12 text-muted-foreground text-xs text-center">
+          © {new Date().getFullYear()}.{" "}
+          <a
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors duration-150 underline underline-offset-2"
+          >
+            Built with ♥ using caffeine.ai
+          </a>
+        </footer>
+      </div>
+    );
+  }
+
+  // ─── Render: requesting ───────────────────────────────────────────────────────
+
+  if (cameraState === "requesting") {
+    return (
+      <div
+        data-ocid="hud.panel"
+        className="flex flex-col items-center justify-center gap-4 px-6"
+        style={{ minHeight: "calc(100vh - 112px)" }}
+      >
+        <Loader2
+          className="w-8 h-8 animate-spin"
+          style={{ color: accentColor }}
+        />
+        <p className="text-foreground font-data text-sm">
+          Requesting camera access...
+        </p>
+        <p className="text-muted-foreground text-xs text-center max-w-xs">
+          Please allow camera access in your browser prompt.
+        </p>
+      </div>
+    );
+  }
+
+  // ─── Render: denied ───────────────────────────────────────────────────────────
+
+  if (cameraState === "denied") {
+    return (
+      <div
+        data-ocid="hud.panel"
+        className="flex flex-col items-center justify-center px-6"
+        style={{ minHeight: "calc(100vh - 112px)" }}
+      >
+        <div
+          data-ocid="hud.error_state"
+          className="border border-destructive/30 bg-destructive/5 rounded-lg p-8 max-w-md w-full text-center space-y-4"
+        >
+          <VideoOff className="w-10 h-10 text-destructive mx-auto" />
+          <h2 className="text-foreground font-semibold text-lg">
+            Camera Access Denied
+          </h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            The Live Vision HUD requires camera access to function. Please
+            enable camera permissions in your browser settings and try again.
+          </p>
+          <div className="bg-surface-raised border border-border rounded px-4 py-3 text-left">
+            <p className="text-muted-foreground text-xs font-data leading-relaxed">
+              Chrome / Edge: Settings → Privacy → Camera → Allow
+              <br />
+              Firefox: Address bar lock icon → Permissions → Camera
+              <br />
+              Safari: Preferences → Websites → Camera
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ocid="hud.retry_button"
+            onClick={() => void activateCamera()}
+            className="flex items-center gap-2 mx-auto px-5 py-2.5 rounded-lg font-semibold text-sm hover:opacity-90 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            style={{
+              background: accentColor,
+              color: "oklch(0.1 0 0)",
+            }}
+          >
+            <ScanLine className="w-4 h-4" />
+            RETRY CAMERA ACCESS
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Render: granted (main HUD view) ─────────────────────────────────────────
+
+  return (
+    <div data-ocid="hud.panel" className="flex flex-col">
+      {/* ── Video container ──────────────────────────────────────────────── */}
+      <div
+        className="relative w-full overflow-hidden bg-black"
+        style={{ height: "calc(100vh - 112px)" }}
+      >
+        {/* Live video */}
+        <video
+          ref={videoRef}
+          data-ocid="hud.video_feed"
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+          aria-label="Live camera feed"
+        />
+
+        {/* Hidden canvas for frame capture */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Corner brackets — tactical HUD effect with sector accent */}
+        <CornerBracket
+          position="tl"
+          color={accentColor.replace(")", " / 0.5)")}
+        />
+        <CornerBracket
+          position="tr"
+          color={accentColor.replace(")", " / 0.5)")}
+        />
+        <CornerBracket
+          position="bl"
+          color={accentColor.replace(")", " / 0.5)")}
+        />
+        <CornerBracket
+          position="br"
+          color={accentColor.replace(")", " / 0.5)")}
+        />
+
+        {/* Sector lock notification — slides in briefly then fades */}
+        <SectorLockBadge
+          sectorName={sectorDisplayName}
+          accent={accentValues}
+          visible={sectorLocked}
+        />
+
+        {/* Pulse ring when auto-monitoring is active */}
+        {autoPulse && (
+          <div
+            className="absolute top-4 right-4 flex items-center justify-center pointer-events-none"
+            aria-hidden="true"
+          >
+            <div
+              className="absolute w-3.5 h-3.5 rounded-full opacity-80"
+              style={{ background: accentColor }}
+            />
+            <div
+              className="w-3.5 h-3.5 rounded-full border-2 hud-pulse-ring"
+              style={{
+                borderColor: accentColor,
+                boxShadow: `0 0 8px ${accentColor.replace(")", " / 0.6)")}`,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Scan sweep animation */}
+        {isScanning && (
+          <div
+            className="absolute left-0 right-0 h-px hud-scan-sweep pointer-events-none"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${accentColor.replace(")", " / 0.6)")}, transparent)`,
+            }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* ── Top HUD bar ────────────────────────────────────────────── */}
+        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-2.5 bg-black/40 backdrop-blur-sm border-b border-white/10">
+          {/* Left: status label */}
+          <div className="flex items-center gap-2.5">
+            <span
+              className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: accentColor }}
+              aria-hidden="true"
+            />
+            <span
+              className="text-xs font-data font-medium tracking-widest uppercase"
+              style={{ color: accentColor }}
+            >
+              {sectorDisplayName} :: VISION ACTIVE
+            </span>
+            {autoPulse && (
+              <span
+                className="flex items-center gap-1 text-[10px] font-data"
+                style={{ color: accentColor }}
+              >
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full hud-blink"
+                  style={{ background: accentColor }}
+                />
+                AUTO-PULSE
+              </span>
+            )}
+            {webSearchEnabled && (
+              <span className="flex items-center gap-1 text-white/50 text-[10px] font-data">
+                <Search className="w-2.5 h-2.5" />
+                WEB
+              </span>
+            )}
+          </div>
+
+          {/* Right: toggles */}
+          <div className="flex items-center gap-4">
+            {/* Web Search toggle */}
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="web-search-toggle"
+                className="text-white/70 text-xs font-data cursor-pointer select-none"
+              >
+                WEB SEARCH
+              </Label>
+              <Switch
+                id="web-search-toggle"
+                data-ocid="hud.web_search_toggle"
+                checked={webSearchEnabled}
+                onCheckedChange={handleWebSearchToggle}
+                aria-label="Toggle web search"
+              />
+            </div>
+
+            {/* Auto-pulse toggle */}
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="auto-pulse-toggle"
+                className="text-white/70 text-xs font-data cursor-pointer select-none"
+              >
+                AUTO-PULSE
+              </Label>
+              <Switch
+                id="auto-pulse-toggle"
+                data-ocid="hud.auto_pulse_toggle"
+                checked={autoPulse}
+                onCheckedChange={(v) => setAutoPulse(v)}
+                aria-label="Toggle continuous monitoring"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom HUD bar (results + scan button) ──────────────── */}
+        <div
+          data-ocid="hud.result_overlay"
+          className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-black/60 backdrop-blur-md border-t border-white/10"
+        >
+          {/* Phase status / result display */}
+          <div className="mb-3 min-h-[3rem]">
+            {/* Scanning phases */}
+            {isScanning && (
+              <PhaseStatusLabel state={scanState} accentColor={accentColor} />
+            )}
+
+            {/* Success: agentic result */}
+            {scanState === "success" &&
+              scanResult &&
+              (searchQuery ? (
+                <AgenticResultDisplay
+                  summary={scanResult}
+                  searchQuery={searchQuery}
+                  sources={sources}
+                />
+              ) : (
+                <p className="text-white/90 text-xs font-data leading-relaxed line-clamp-4">
+                  {scanResult}
+                </p>
+              ))}
+
+            {/* Error */}
+            {scanState === "error" && (
+              <p
+                data-ocid="hud.error_state"
+                className="text-status-warning text-xs font-data"
+              >
+                {scanResult ||
+                  "SCAN FAILED — Check Ollama endpoint in settings"}
+              </p>
+            )}
+
+            {/* Idle */}
+            {scanState === "idle" && (
+              <p className="text-white/30 text-xs font-data italic">
+                {webSearchEnabled
+                  ? "No analysis yet — tap INITIALIZE SCAN to begin agentic web search."
+                  : "No analysis yet — tap INITIALIZE SCAN to begin (vision-only mode)."}
+              </p>
+            )}
+          </div>
+
+          {/* Scan button row */}
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              data-ocid="hud.scan_button"
+              onClick={() => void captureAndScan()}
+              disabled={isScanning}
+              className="flex items-center gap-2 px-4 py-2 rounded text-[11px] font-data font-semibold tracking-widest uppercase transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: isScanning
+                  ? accentColor.replace(")", " / 0.25)")
+                  : accentColor.replace(")", " / 0.9)"),
+                color: "oklch(0.08 0 0)",
+                boxShadow: `0 2px 12px ${accentColor.replace(")", " / 0.3)")}`,
+                border: `1px solid ${accentColor.replace(")", " / 0.4)")}`,
+              }}
+            >
+              {isScanning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ScanLine className="w-3.5 h-3.5" />
+              )}
+              {isScanning
+                ? scanState === "detecting"
+                  ? "DETECTING..."
+                  : scanState === "identifying"
+                    ? "IDENTIFYING..."
+                    : scanState === "searching"
+                      ? "SEARCHING..."
+                      : "SYNTHESIZING..."
+                : webSearchEnabled
+                  ? "INITIALIZE SCAN + SEARCH"
+                  : "INITIALIZE SCAN"}
+            </button>
+
+            {scanState === "success" && (
+              <span
+                className="text-[10px] font-data flex items-center gap-1.5"
+                style={{ color: accentColor }}
+              >
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full"
+                  style={{ background: accentColor }}
+                />
+                {searchQuery ? "AGENTIC SCAN COMPLETE" : "SCAN COMPLETE"}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Scan history section ─────────────────────────────────────────────── */}
+      <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto w-full">
+        <ScanHistorySection
+          history={history}
+          loading={historyLoading}
+          onDelete={handleDeleteResult}
+        />
+
+        {/* Footer */}
+        <footer className="mt-8 pt-4 border-t border-border text-muted-foreground text-xs">
+          © {new Date().getFullYear()}.{" "}
+          <a
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors duration-150 underline underline-offset-2"
+          >
+            Built with ♥ using caffeine.ai
+          </a>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ─── Scan History Section ─────────────────────────────────────────────────────
+
+interface ScanHistorySectionProps {
+  history: ScanResult[];
+  loading: boolean;
+  onDelete: (id: string) => void;
+}
+
+function ScanHistorySection({
+  history,
+  loading,
+  onDelete,
+}: ScanHistorySectionProps) {
+  return (
+    <section>
+      {/* Section header */}
+      <div className="flex items-center gap-3 mb-5">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted text-muted-foreground border border-border select-none">
+          [SYS]
+        </span>
+        <h2 className="text-sm font-semibold text-foreground">SCAN HISTORY</h2>
+        <div className="flex-1 h-px bg-border" />
+        {!loading && (
+          <span className="text-muted-foreground text-[11px] font-data">
+            {history.length} record{history.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <div
+          data-ocid="hud.loading_state"
+          className="text-muted-foreground text-xs py-4 font-data"
+        >
+          Loading scan history...
+        </div>
+      ) : history.length === 0 ? (
+        <div
+          data-ocid="hud.history_empty_state"
+          className="border border-dashed border-border rounded-lg text-muted-foreground text-sm py-10 px-6 text-center space-y-1"
+        >
+          <ScanLine className="w-6 h-6 mx-auto mb-2 opacity-30" />
+          <p className="font-medium">No scans recorded.</p>
+          <p className="text-xs">Initialize scan to begin.</p>
+        </div>
+      ) : (
+        <div data-ocid="hud.history_list" className="space-y-3">
+          {history.map((result, idx) => (
+            <HistoryItem
+              key={result.id}
+              result={result}
+              index={idx + 1}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

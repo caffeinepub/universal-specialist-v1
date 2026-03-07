@@ -2,69 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Font Faces ─────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Sora';
+  src: url('/assets/fonts/Sora[wght].woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/assets/fonts/JetBrainsMono[wght].woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Design Tokens ──────────────────────────────────────────────────────────── */
+
 @layer base {
   :root {
-    --radius: 0.25rem;
+    --radius: 0.5rem;
 
-    /* VERASLi Terminal-Dark Design Tokens */
-    /* Background: near-black with faint green tint */
-    --background: 0.08 0.005 145;
-    /* Surface: slightly lighter for panels/header */
-    --surface: 0.12 0.008 145;
-    /* Card: panel surface */
-    --card: 0.12 0.008 145;
-    --card-foreground: 0.82 0.22 145;
+    /* ── Enterprise Dark Palette ─────────────────────────────────── */
+
+    /* Backgrounds */
+    --background:         0.15 0.006 250;
+    --surface:            0.19 0.007 250;
+    --surface-raised:     0.22 0.008 250;
+
+    /* Card */
+    --card:               0.19 0.007 250;
+    --card-foreground:    0.97 0.004 250;
+
     /* Popover */
-    --popover: 0.14 0.01 145;
-    --popover-foreground: 0.82 0.22 145;
-    /* Primary: terminal green */
-    --primary: 0.82 0.22 145;
-    --primary-foreground: 0.08 0.005 145;
-    /* Secondary: slightly dimmed green */
-    --secondary: 0.18 0.015 145;
-    --secondary-foreground: 0.82 0.22 145;
-    /* Muted: dimmed text */
-    --muted: 0.14 0.01 145;
-    --muted-foreground: 0.45 0.05 145;
-    /* Accent: amber */
-    --accent: 0.82 0.18 75;
-    --accent-foreground: 0.08 0.005 145;
-    /* Destructive */
-    --destructive: 0.65 0.22 25;
-    --destructive-foreground: 0.98 0 0;
-    /* Border: subtle green-tinted */
-    --border: 0.25 0.05 145;
-    --input: 0.25 0.05 145;
-    --ring: 0.82 0.22 145;
-    /* Foreground text */
-    --foreground: 0.82 0.22 145;
-    /* Chart colors */
-    --chart-1: 0.82 0.22 145;
-    --chart-2: 0.82 0.18 75;
-    --chart-3: 0.65 0.18 145;
-    --chart-4: 0.5 0.12 145;
-    --chart-5: 0.35 0.08 145;
-    /* Sidebar */
-    --sidebar: 0.12 0.008 145;
-    --sidebar-foreground: 0.82 0.22 145;
-    --sidebar-primary: 0.82 0.22 145;
-    --sidebar-primary-foreground: 0.08 0.005 145;
-    --sidebar-accent: 0.82 0.18 75;
-    --sidebar-accent-foreground: 0.08 0.005 145;
-    --sidebar-border: 0.25 0.05 145;
-    --sidebar-ring: 0.82 0.22 145;
+    --popover:            0.22 0.008 250;
+    --popover-foreground: 0.97 0.004 250;
 
-    /* VERASLi custom tokens */
-    --terminal-green: 0.82 0.22 145;
-    --terminal-green-dim: 0.55 0.15 145;
-    --terminal-green-glow: 0.9 0.25 145;
-    --terminal-amber: 0.82 0.18 75;
-    --terminal-amber-dim: 0.55 0.12 75;
-    --terminal-bg: 0.08 0.005 145;
-    --terminal-surface: 0.12 0.008 145;
-    --terminal-surface-raised: 0.15 0.012 145;
-    --terminal-border: 0.25 0.05 145;
-    --terminal-muted: 0.45 0.05 145;
+    /* Foreground text */
+    --foreground:         0.97 0.004 250;
+
+    /* Primary: metallic blue */
+    --primary:            0.62 0.14 230;
+    --primary-foreground: 0.97 0.004 250;
+
+    /* Secondary: steel silver */
+    --secondary:          0.30 0.008 230;
+    --secondary-foreground: 0.85 0.006 250;
+
+    /* Muted */
+    --muted:              0.22 0.007 250;
+    --muted-foreground:   0.55 0.008 250;
+
+    /* Accent: silver-blue */
+    --accent:             0.45 0.012 230;
+    --accent-foreground:  0.97 0.004 250;
+
+    /* Destructive */
+    --destructive:        0.60 0.18 25;
+    --destructive-foreground: 0.97 0.004 250;
+
+    /* Border / Input / Ring */
+    --border:             0.28 0.009 250;
+    --input:              0.19 0.007 250;
+    --ring:               0.62 0.14 230;
+
+    /* Chart */
+    --chart-1:            0.62 0.14 230;
+    --chart-2:            0.62 0.10 170;
+    --chart-3:            0.72 0.12 75;
+    --chart-4:            0.60 0.18 25;
+    --chart-5:            0.45 0.012 230;
+
+    /* Sidebar */
+    --sidebar:                     0.19 0.007 250;
+    --sidebar-foreground:          0.97 0.004 250;
+    --sidebar-primary:             0.62 0.14 230;
+    --sidebar-primary-foreground:  0.97 0.004 250;
+    --sidebar-accent:              0.45 0.012 230;
+    --sidebar-accent-foreground:   0.97 0.004 250;
+    --sidebar-border:              0.28 0.009 250;
+    --sidebar-ring:                0.62 0.14 230;
+
+    /* ── Semantic Status Colors (terminal origin preserved as functional) ── */
+    --status-ok:          0.62 0.10 170;   /* teal / success */
+    --status-warning:     0.72 0.12 75;    /* amber / warning */
+    --status-offline:     0.55 0.008 250;  /* muted / offline */
+
+    /* ── Legacy terminal tokens (kept for backward compatibility in classes) ── */
+    --terminal-green:         0.62 0.10 170;
+    --terminal-green-dim:     0.45 0.06 170;
+    --terminal-green-glow:    0.70 0.12 170;
+    --terminal-amber:         0.72 0.12 75;
+    --terminal-amber-dim:     0.55 0.08 75;
+    --terminal-bg:            0.15 0.006 250;
+    --terminal-surface:       0.19 0.007 250;
+    --terminal-surface-raised: 0.22 0.008 250;
+    --terminal-border:        0.28 0.009 250;
+    --terminal-muted:         0.55 0.008 250;
   }
 
   * {
@@ -73,119 +110,135 @@
   }
 
   html {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'Sora', 'Segoe UI', system-ui, sans-serif;
     font-size: 14px;
+    color-scheme: dark;
   }
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'Sora', 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.65;
     min-height: 100vh;
     overflow-x: hidden;
   }
 
-  /* Scrollbar styling for terminal feel */
+  /* Scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background: oklch(var(--terminal-bg));
+    background: oklch(var(--background));
   }
 
   ::-webkit-scrollbar-thumb {
-    background: oklch(var(--terminal-border));
-    border-radius: 2px;
+    background: oklch(var(--border));
+    border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: oklch(var(--terminal-green-dim));
+    background: oklch(var(--primary));
   }
 
   /* Selection */
   ::selection {
-    background: oklch(var(--terminal-green) / 0.25);
-    color: oklch(var(--terminal-green-glow));
+    background: oklch(var(--primary) / 0.25);
+    color: oklch(var(--foreground));
   }
 }
 
-/* Terminal grid background texture */
-.terminal-bg-grid {
-  background-image:
-    linear-gradient(
-      oklch(var(--terminal-green) / 0.03) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      oklch(var(--terminal-green) / 0.03) 1px,
-      transparent 1px
-    );
-  background-size: 32px 32px;
-}
+/* ─── Removed: terminal-bg-grid, terminal-scanlines, text-glow-*, cursor-blink ── */
+/* ─── Removed: type-in-1 through type-in-5 staggered animations ─────────────── */
 
-/* Scanline overlay effect */
-.terminal-scanlines::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    oklch(var(--terminal-bg) / 0.15) 2px,
-    oklch(var(--terminal-bg) / 0.15) 4px
-  );
-  pointer-events: none;
-  z-index: 9999;
-}
+/* ─── Clean fade-in boot animation ──────────────────────────────────────────── */
 
-/* Terminal text glow effect */
-.text-glow-green {
-  text-shadow: 0 0 8px oklch(var(--terminal-green) / 0.6);
-}
-
-.text-glow-amber {
-  text-shadow: 0 0 8px oklch(var(--terminal-amber) / 0.5);
-}
-
-/* Cursor blink animation */
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.cursor-blink {
-  animation: cursor-blink 1.2s step-end infinite;
-}
-
-/* Tab active glow */
-@keyframes tab-activate {
-  from { opacity: 0; transform: scaleX(0.7); }
-  to { opacity: 1; transform: scaleX(1); }
-}
-
-/* Boot sequence fade-in */
 @keyframes boot-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .boot-in {
   animation: boot-in 0.3s ease-out forwards;
 }
 
-@keyframes type-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* ─── Tab active slide-in ────────────────────────────────────────────────────── */
+
+@keyframes tab-activate {
+  from { transform: scaleX(0.5); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
 }
 
-.type-in-1 { animation: type-in 0.15s ease-out 0.1s both; }
-.type-in-2 { animation: type-in 0.15s ease-out 0.35s both; }
-.type-in-3 { animation: type-in 0.15s ease-out 0.6s both; }
-.type-in-4 { animation: type-in 0.15s ease-out 0.85s both; }
-.type-in-5 { animation: type-in 0.15s ease-out 1.1s both; }
+/* ─── Enterprise card shadow utility ─────────────────────────────────────────── */
+
+.card-shadow {
+  box-shadow: 0 2px 12px oklch(0 0 0 / 0.35), 0 1px 3px oklch(0 0 0 / 0.2);
+}
+
+.card-shadow-sm {
+  box-shadow: 0 1px 6px oklch(0 0 0 / 0.25);
+}
+
+/* ─── Status badge dot colors ────────────────────────────────────────────────── */
+
+.status-dot-ok      { background: oklch(var(--status-ok)); }
+.status-dot-warning { background: oklch(var(--status-warning)); }
+.status-dot-offline { background: oklch(var(--status-offline)); }
+
+/* ─── Monospace data font for data surfaces ──────────────────────────────────── */
+
+.font-data {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+/* ─── HUD Pulse ring animation ───────────────────────────────────────────────── */
+
+@keyframes hud-pulse {
+  0%   { transform: scale(1);   opacity: 0.9; }
+  50%  { transform: scale(1.5); opacity: 0.3; }
+  100% { transform: scale(1);   opacity: 0.9; }
+}
+
+.hud-pulse-ring {
+  animation: hud-pulse 2s ease-in-out infinite;
+}
+
+/* ─── HUD blink for active indicator ─────────────────────────────────────────── */
+
+@keyframes hud-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.hud-blink {
+  animation: hud-blink 1.2s step-end infinite;
+}
+
+/* ─── HUD scanning sweep line ─────────────────────────────────────────────────── */
+
+@keyframes hud-scan-sweep {
+  from { top: 0%; opacity: 0.6; }
+  to   { top: 100%; opacity: 0; }
+}
+
+.hud-scan-sweep {
+  animation: hud-scan-sweep 2s linear infinite;
+}
+
+/* ─── Preserve reduced-motion ────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .hud-pulse-ring,
+  .hud-blink,
+  .hud-scan-sweep {
+    animation: none;
+    opacity: 1;
+  }
+}

@@ -89,6 +89,25 @@ export class ExternalBlob {
         return this;
     }
 }
+export interface SearchResult {
+    url: string;
+    title: string;
+    snippet: string;
+}
+export interface AgenticResult {
+    contextMode: string;
+    results: Array<SearchResult>;
+    timestamp: bigint;
+    searchQuery: string;
+    actionableSummary: string;
+}
+export interface ScanResult {
+    id: string;
+    contextMode: string;
+    analysisText: string;
+    timestamp: bigint;
+    thumbnailSummary: string;
+}
 export interface KnowledgeDoc {
     id: string;
     title: string;
@@ -103,16 +122,35 @@ export interface DataRow {
     toolsRequired: string;
 }
 export interface backendInterface {
+    agenticScan(imageDescription: string, contextMode: string): Promise<AgenticResult>;
     deleteDataRow(id: string): Promise<void>;
     deleteKnowledgeDoc(id: string): Promise<void>;
+    deleteScanResult(id: string): Promise<void>;
     getDataRows(): Promise<Array<DataRow>>;
     getKnowledgeDocs(): Promise<Array<KnowledgeDoc>>;
+    getScanResults(): Promise<Array<ScanResult>>;
     saveDataRow(row: DataRow): Promise<void>;
     saveKnowledgeDoc(doc: KnowledgeDoc): Promise<void>;
+    saveScanResult(result: ScanResult): Promise<void>;
+    webSearch(_query: string): Promise<Array<SearchResult>>;
     whoami(): Promise<Principal>;
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
+    async agenticScan(arg0: string, arg1: string): Promise<AgenticResult> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.agenticScan(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.agenticScan(arg0, arg1);
+            return result;
+        }
+    }
     async deleteDataRow(arg0: string): Promise<void> {
         if (this.processError) {
             try {
@@ -138,6 +176,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteKnowledgeDoc(arg0);
+            return result;
+        }
+    }
+    async deleteScanResult(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteScanResult(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteScanResult(arg0);
             return result;
         }
     }
@@ -169,6 +221,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getScanResults(): Promise<Array<ScanResult>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getScanResults();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getScanResults();
+            return result;
+        }
+    }
     async saveDataRow(arg0: DataRow): Promise<void> {
         if (this.processError) {
             try {
@@ -194,6 +260,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.saveKnowledgeDoc(arg0);
+            return result;
+        }
+    }
+    async saveScanResult(arg0: ScanResult): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.saveScanResult(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.saveScanResult(arg0);
+            return result;
+        }
+    }
+    async webSearch(arg0: string): Promise<Array<SearchResult>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.webSearch(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.webSearch(arg0);
             return result;
         }
     }

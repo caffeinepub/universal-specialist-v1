@@ -16,8 +16,11 @@ export default {
     },
     extend: {
       fontFamily: {
+        /* Primary UI font — Sora */
+        sans: ["'Sora'", "'Segoe UI'", "system-ui", "sans-serif"],
+        /* Monospace data font — JetBrains Mono for spec values / logic feed */
         mono: ["'JetBrains Mono'", "'Courier New'", "monospace"],
-        sans: ["'JetBrains Mono'", "'Courier New'", "monospace"],
+        data: ["'JetBrains Mono'", "'Courier New'", "monospace"],
       },
       colors: {
         border: "oklch(var(--border))",
@@ -53,6 +56,10 @@ export default {
           DEFAULT: "oklch(var(--card))",
           foreground: "oklch(var(--card-foreground))",
         },
+        surface: {
+          DEFAULT: "oklch(var(--surface))",
+          raised: "oklch(var(--surface-raised))",
+        },
         chart: {
           1: "oklch(var(--chart-1))",
           2: "oklch(var(--chart-2))",
@@ -70,7 +77,13 @@ export default {
           border: "oklch(var(--sidebar-border))",
           ring: "oklch(var(--sidebar-ring))",
         },
-        /* VERASLi terminal tokens */
+        /* Semantic status tokens */
+        status: {
+          ok:      "oklch(var(--status-ok))",
+          warning: "oklch(var(--status-warning))",
+          offline: "oklch(var(--status-offline))",
+        },
+        /* Terminal legacy tokens (for semantic status use only) */
         terminal: {
           green: "oklch(var(--terminal-green))",
           "green-dim": "oklch(var(--terminal-green-dim))",
@@ -85,15 +98,18 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius)",          /* 8px */
+        md: "calc(var(--radius) - 2px)", /* 6px */
+        sm: "calc(var(--radius) - 4px)", /* 4px */
       },
       boxShadow: {
-        xs: "0 1px 2px 0 rgba(0,0,0,0.05)",
-        "green-glow": "0 0 12px oklch(0.82 0.22 145 / 0.3)",
-        "green-glow-sm": "0 0 6px oklch(0.82 0.22 145 / 0.2)",
-        "amber-glow": "0 0 12px oklch(0.82 0.18 75 / 0.25)",
+        card: "0 2px 12px oklch(0 0 0 / 0.35), 0 1px 3px oklch(0 0 0 / 0.2)",
+        "card-sm": "0 1px 6px oklch(0 0 0 / 0.25)",
+        "card-hover": "0 4px 20px oklch(0 0 0 / 0.4), 0 2px 6px oklch(0 0 0 / 0.25)",
+        input: "inset 0 1px 3px oklch(0 0 0 / 0.3)",
+        "input-focus": "0 0 0 2px oklch(var(--primary) / 0.35)",
+        /* Remove glow shadows */
+        xs: "0 1px 2px 0 oklch(0 0 0 / 0.08)",
       },
       keyframes: {
         "accordion-down": {

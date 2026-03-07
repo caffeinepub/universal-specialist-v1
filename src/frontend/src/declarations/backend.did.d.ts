@@ -10,6 +10,13 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface AgenticResult {
+  'contextMode' : string,
+  'results' : Array<SearchResult>,
+  'timestamp' : bigint,
+  'searchQuery' : string,
+  'actionableSummary' : string,
+}
 export interface DataRow {
   'id' : string,
   'component' : string,
@@ -23,13 +30,30 @@ export interface KnowledgeDoc {
   'content' : string,
   'createdAt' : bigint,
 }
+export interface ScanResult {
+  'id' : string,
+  'contextMode' : string,
+  'analysisText' : string,
+  'timestamp' : bigint,
+  'thumbnailSummary' : string,
+}
+export interface SearchResult {
+  'url' : string,
+  'title' : string,
+  'snippet' : string,
+}
 export interface _SERVICE {
+  'agenticScan' : ActorMethod<[string, string], AgenticResult>,
   'deleteDataRow' : ActorMethod<[string], undefined>,
   'deleteKnowledgeDoc' : ActorMethod<[string], undefined>,
+  'deleteScanResult' : ActorMethod<[string], undefined>,
   'getDataRows' : ActorMethod<[], Array<DataRow>>,
   'getKnowledgeDocs' : ActorMethod<[], Array<KnowledgeDoc>>,
+  'getScanResults' : ActorMethod<[], Array<ScanResult>>,
   'saveDataRow' : ActorMethod<[DataRow], undefined>,
   'saveKnowledgeDoc' : ActorMethod<[KnowledgeDoc], undefined>,
+  'saveScanResult' : ActorMethod<[ScanResult], undefined>,
+  'webSearch' : ActorMethod<[string], Array<SearchResult>>,
   'whoami' : ActorMethod<[], Principal>,
 }
 export declare const idlService: IDL.ServiceClass;

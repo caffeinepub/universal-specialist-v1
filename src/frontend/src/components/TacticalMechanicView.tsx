@@ -18,72 +18,89 @@ function matchesSearch(query: string, ...fields: string[]): boolean {
   return fields.some((f) => f.toLowerCase().includes(lower));
 }
 
-// ─── Terminal-styled components ───────────────────────────────────────────────
+// ─── Enterprise UI Components ─────────────────────────────────────────────────
+
+/** Small monospace badge for system labels like [SYS], [TM-01] */
+function SysBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted text-muted-foreground border border-border select-none whitespace-nowrap">
+      {label}
+    </span>
+  );
+}
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 mb-4">
-      <span className="text-terminal-green-dim text-[10px] tracking-widest uppercase select-none">
-        [SYS]
-      </span>
-      <span className="text-terminal-green-dim text-[11px] tracking-widest uppercase font-semibold">
-        {children}
-      </span>
-      <div className="flex-1 h-px bg-terminal-border" />
+    <div className="flex items-center gap-3 mb-5">
+      <SysBadge label="[SYS]" />
+      <h2 className="text-sm font-semibold text-foreground">{children}</h2>
+      <div className="flex-1 h-px bg-border" />
     </div>
   );
 }
 
-interface TerminalInputProps
+// Enterprise input — slate bg, subtle border, 6px radius, soft shadow, blue focus ring
+interface EnterpriseInputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
   "data-ocid"?: string;
 }
 
-function TerminalInput({ className = "", ...props }: TerminalInputProps) {
+function EnterpriseInput({ className = "", ...props }: EnterpriseInputProps) {
   return (
     <input
       {...props}
       className={[
-        "w-full bg-terminal-bg border border-terminal-border text-terminal-green placeholder-terminal-muted",
-        "px-3 py-2 text-xs font-mono tracking-wide",
-        "focus:outline-none focus:border-terminal-green focus:ring-1 focus:ring-terminal-green/30",
+        "w-full bg-input border border-border text-foreground placeholder-muted-foreground",
+        "px-3 py-2 text-sm font-data",
+        "rounded-md shadow-input",
+        "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
         "transition-colors duration-150",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
         className,
       ].join(" ")}
     />
   );
 }
 
-interface TerminalButtonProps
+// Enterprise button variants
+type ButtonVariant = "primary" | "secondary" | "destructive" | "ghost";
+
+interface EnterpriseButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "green" | "amber" | "muted";
+  variant?: ButtonVariant;
+  size?: "sm" | "md";
   "data-ocid"?: string;
 }
 
-function TerminalButton({
-  variant = "green",
+function EnterpriseButton({
+  variant = "primary",
+  size = "md",
   className = "",
   children,
   ...props
-}: TerminalButtonProps) {
-  const variantClass =
-    variant === "green"
-      ? "border-terminal-green text-terminal-green hover:bg-terminal-green/10 focus-visible:ring-terminal-green/40"
-      : variant === "amber"
-        ? "border-terminal-amber text-terminal-amber hover:bg-terminal-amber/10 focus-visible:ring-terminal-amber/40"
-        : "border-terminal-border text-terminal-muted hover:bg-terminal-surface-raised focus-visible:ring-terminal-border/40";
+}: EnterpriseButtonProps) {
+  const base =
+    "inline-flex items-center justify-center rounded-lg font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-40 disabled:cursor-not-allowed select-none";
+
+  const sizeClass =
+    size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-1.5 text-sm";
+
+  const variantClass = {
+    primary:
+      "bg-primary text-primary-foreground hover:bg-primary/90 shadow-card-sm",
+    secondary:
+      "bg-secondary text-secondary-foreground border border-border hover:bg-surface-raised",
+    destructive:
+      "bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20",
+    ghost:
+      "text-muted-foreground hover:text-foreground hover:bg-surface-raised",
+  }[variant];
 
   return (
     <button
       type="button"
       {...props}
-      className={[
-        "border px-3 py-1.5 text-[11px] font-mono font-semibold tracking-widest uppercase",
-        "transition-colors duration-150 focus:outline-none focus-visible:ring-1",
-        "disabled:opacity-40 disabled:cursor-not-allowed",
-        variantClass,
-        className,
-      ].join(" ")}
+      className={[base, sizeClass, variantClass, className].join(" ")}
     >
       {children}
     </button>
@@ -151,7 +168,7 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
     try {
       const doc: KnowledgeDoc = {
         id: generateId(),
-        title: title.trim() || "UNTITLED DOCUMENT",
+        title: title.trim() || "Untitled Document",
         content: content.trim(),
         createdAt: BigInt(Date.now()),
       };
@@ -183,27 +200,27 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
 
   return (
     <section className="mb-8">
-      <SectionHeader>PRIMARY KNOWLEDGE DROP (VERASLi™ INDEXING)</SectionHeader>
+      <SectionHeader>Primary Knowledge Drop (VERASLi™ Indexing)</SectionHeader>
 
-      {/* Upload form */}
+      {/* Upload form card */}
       <div
         data-ocid="knowledge.dropzone"
-        className="border border-terminal-border bg-terminal-surface p-4 space-y-3"
+        className="border border-border bg-card card-shadow rounded-lg p-6 space-y-4"
       >
         {/* Title input */}
         <div>
           <label
             htmlFor="knowledge-title"
-            className="block text-[10px] text-terminal-muted tracking-widest uppercase mb-1"
+            className="block text-xs font-medium text-muted-foreground mb-1.5"
           >
-            DOCUMENT TITLE
+            Document Title
           </label>
-          <TerminalInput
+          <EnterpriseInput
             id="knowledge-title"
             data-ocid="knowledge.title_input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="E.G. 09 CAMRY 2AZ-FE ENGINE SPEC..."
+            placeholder="e.g. 09 Camry 2AZ-FE Engine Spec..."
           />
         </div>
 
@@ -211,21 +228,22 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
         <div>
           <label
             htmlFor="knowledge-content"
-            className="block text-[10px] text-terminal-muted tracking-widest uppercase mb-1"
+            className="block text-xs font-medium text-muted-foreground mb-1.5"
           >
-            KNOWLEDGE CONTENT
+            Knowledge Content
           </label>
           <textarea
             id="knowledge-content"
             data-ocid="knowledge.textarea"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="PASTE MANUAL EXCERPT, SPEC SHEET, OR DIAGNOSTIC TEXT..."
+            placeholder="Paste manual excerpt, spec sheet, or diagnostic text..."
             rows={6}
             className={[
-              "w-full bg-terminal-bg border border-terminal-border text-terminal-green placeholder-terminal-muted",
-              "px-3 py-2 text-xs font-mono tracking-wide resize-y",
-              "focus:outline-none focus:border-terminal-green focus:ring-1 focus:ring-terminal-green/30",
+              "w-full bg-input border border-border text-foreground placeholder-muted-foreground",
+              "px-3 py-2 text-sm font-data leading-relaxed resize-y",
+              "rounded-md shadow-input",
+              "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
               "transition-colors duration-150",
             ].join(" ")}
           />
@@ -241,37 +259,39 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
             onChange={handleFileUpload}
             aria-label="Upload .txt or .md file"
           />
-          <TerminalButton
+          <EnterpriseButton
             data-ocid="knowledge.upload_button"
-            variant="muted"
+            variant="secondary"
             onClick={() => fileInputRef.current?.click()}
           >
-            [UPLOAD .TXT / .MD]
-          </TerminalButton>
+            Upload File
+          </EnterpriseButton>
 
-          <TerminalButton
+          <EnterpriseButton
             data-ocid="knowledge.submit_button"
-            variant="green"
+            variant="primary"
             onClick={() => void handleSubmit()}
             disabled={saveStatus === "saving" || !content.trim() || !actor}
           >
-            {saveStatus === "saving" ? "[INDEXING...]" : "[INDEX DOCUMENT]"}
-          </TerminalButton>
+            {saveStatus === "saving" ? "Indexing..." : "Index Document"}
+          </EnterpriseButton>
 
           {saveStatus === "ok" && (
             <span
               data-ocid="knowledge.success_state"
-              className="text-terminal-green text-glow-green text-[11px] font-semibold tracking-widest"
+              className="flex items-center gap-1.5 text-status-ok text-xs font-medium"
             >
-              ✓ STATUS: OK — DOCUMENT INDEXED
+              <span className="inline-block w-1.5 h-1.5 rounded-full status-dot-ok" />
+              Document indexed successfully
             </span>
           )}
           {saveStatus === "error" && (
             <span
               data-ocid="knowledge.error_state"
-              className="text-terminal-amber text-glow-amber text-[11px] font-semibold tracking-widest"
+              className="flex items-center gap-1.5 text-status-warning text-xs font-medium"
             >
-              ⚠ WARNING: SAVE FAILED
+              <span className="inline-block w-1.5 h-1.5 rounded-full status-dot-warning" />
+              Save failed — please retry
             </span>
           )}
         </div>
@@ -279,24 +299,24 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
 
       {/* Document list */}
       <div className="mt-4">
-        <div className="text-[10px] text-terminal-muted tracking-widest uppercase mb-2">
-          INDEXED DOCUMENTS — {loadingDocs ? "..." : filteredDocs.length} RECORD
-          {!loadingDocs && filteredDocs.length !== 1 ? "S" : ""}
+        <div className="text-xs font-medium text-muted-foreground mb-3">
+          Indexed Documents — {loadingDocs ? "..." : filteredDocs.length} record
+          {!loadingDocs && filteredDocs.length !== 1 ? "s" : ""}
         </div>
 
         {isFetching || loadingDocs ? (
           <div
             data-ocid="knowledge.loading_state"
-            className="text-terminal-muted text-xs py-4 tracking-widest"
+            className="text-muted-foreground text-xs py-4 font-data"
           >
-            [LOADING...]
+            Loading...
           </div>
         ) : filteredDocs.length === 0 ? (
           <div
             data-ocid="knowledge.empty_state"
-            className="border border-dashed border-terminal-border text-terminal-muted text-[11px] tracking-widest py-5 px-4"
+            className="border border-dashed border-border rounded-lg text-muted-foreground text-sm py-8 px-6 text-center"
           >
-            [NO DOCUMENTS INDEXED. AWAITING KNOWLEDGE DROP...]
+            No documents indexed. Paste content above or upload a file to begin.
           </div>
         ) : (
           <ul data-ocid="knowledge.list" className="space-y-2">
@@ -304,25 +324,26 @@ function KnowledgeSink({ searchQuery }: KnowledgeSinkProps) {
               <li
                 key={doc.id}
                 data-ocid={`knowledge.item.${idx + 1}`}
-                className="border border-terminal-border bg-terminal-surface p-3 flex items-start gap-3"
+                className="border border-border bg-card card-shadow-sm rounded-lg p-4 flex items-start gap-4 hover:bg-surface-raised transition-colors duration-150"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-terminal-green text-xs font-semibold tracking-wide truncate mb-0.5">
+                  <div className="text-foreground text-sm font-semibold truncate mb-1">
                     {doc.title}
                   </div>
-                  <div className="text-terminal-muted text-[11px] leading-relaxed line-clamp-2">
-                    {doc.content.slice(0, 100)}
-                    {doc.content.length > 100 ? "..." : ""}
+                  <div className="text-muted-foreground text-xs font-data leading-relaxed line-clamp-2">
+                    {doc.content.slice(0, 120)}
+                    {doc.content.length > 120 ? "..." : ""}
                   </div>
                 </div>
-                <TerminalButton
+                <EnterpriseButton
                   data-ocid={`knowledge.delete_button.${idx + 1}`}
-                  variant="amber"
+                  variant="destructive"
+                  size="sm"
                   onClick={() => void handleDelete(doc.id)}
-                  className="flex-shrink-0 text-[10px] px-2 py-1"
+                  className="flex-shrink-0"
                 >
-                  [DEL]
-                </TerminalButton>
+                  Delete
+                </EnterpriseButton>
               </li>
             ))}
           </ul>
@@ -418,66 +439,66 @@ function DataGrid({ searchQuery }: DataGridProps) {
   return (
     <section>
       <SectionHeader>
-        MASTER DATA BLOCKS — STRUCTURED SPECIFICATION GRID
+        Master Data Blocks — Structured Specification Grid
       </SectionHeader>
 
-      {/* Add row form */}
-      <div className="border border-terminal-border bg-terminal-surface p-4 mb-4">
-        <div className="text-[10px] text-terminal-muted tracking-widest uppercase mb-3">
-          ADD SPECIFICATION BLOCK
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+      {/* Add row form card */}
+      <div className="border border-border bg-card card-shadow rounded-lg p-6 mb-4">
+        <p className="text-xs font-medium text-muted-foreground mb-4">
+          Add Specification Block
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div>
             <label
               htmlFor="datagrid-component"
-              className="block text-[10px] text-terminal-muted tracking-widest uppercase mb-1"
+              className="block text-xs font-medium text-muted-foreground mb-1.5"
             >
-              COMPONENT
+              Component
             </label>
-            <TerminalInput
+            <EnterpriseInput
               id="datagrid-component"
               data-ocid="datagrid.component_input"
               value={component}
               onChange={(e) => setComponent(e.target.value)}
-              placeholder="E.G. TIMING CHAIN"
+              placeholder="e.g. Timing Chain"
             />
           </div>
           <div>
             <label
               htmlFor="datagrid-specification"
-              className="block text-[10px] text-terminal-muted tracking-widest uppercase mb-1"
+              className="block text-xs font-medium text-muted-foreground mb-1.5"
             >
-              SPECIFICATION
+              Specification
             </label>
-            <TerminalInput
+            <EnterpriseInput
               id="datagrid-specification"
               data-ocid="datagrid.specification_input"
               value={specification}
               onChange={(e) => setSpecification(e.target.value)}
-              placeholder="E.G. 2AZ-FE, 2362CC, 110KW"
+              placeholder="e.g. 2AZ-FE, 2362cc, 110kW"
             />
           </div>
           <div>
             <label
               htmlFor="datagrid-tools"
-              className="block text-[10px] text-terminal-muted tracking-widest uppercase mb-1"
+              className="block text-xs font-medium text-muted-foreground mb-1.5"
             >
-              TOOLS REQUIRED
+              Tools Required
             </label>
-            <TerminalInput
+            <EnterpriseInput
               id="datagrid-tools"
               data-ocid="datagrid.tools_input"
               value={toolsRequired}
               onChange={(e) => setToolsRequired(e.target.value)}
-              placeholder="E.G. 10MM, TIMING KIT"
+              placeholder="e.g. 10mm, Timing Kit"
             />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <TerminalButton
+          <EnterpriseButton
             data-ocid="datagrid.add_button"
-            variant="green"
+            variant="primary"
             onClick={() => void handleAddRow()}
             disabled={
               addStatus === "saving" ||
@@ -487,17 +508,19 @@ function DataGrid({ searchQuery }: DataGridProps) {
                 !toolsRequired.trim())
             }
           >
-            {addStatus === "saving" ? "[SAVING...]" : "[ADD BLOCK]"}
-          </TerminalButton>
+            {addStatus === "saving" ? "Saving..." : "Add Block"}
+          </EnterpriseButton>
 
           {addStatus === "ok" && (
-            <span className="text-terminal-green text-glow-green text-[11px] font-semibold tracking-widest">
-              ✓ STATUS: OK — BLOCK SAVED
+            <span className="flex items-center gap-1.5 text-status-ok text-xs font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full status-dot-ok" />
+              Block saved
             </span>
           )}
           {addStatus === "error" && (
-            <span className="text-terminal-amber text-glow-amber text-[11px] font-semibold tracking-widest">
-              ⚠ WARNING: SAVE FAILED
+            <span className="flex items-center gap-1.5 text-status-warning text-xs font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full status-dot-warning" />
+              Save failed — please retry
             </span>
           )}
         </div>
@@ -507,72 +530,77 @@ function DataGrid({ searchQuery }: DataGridProps) {
       {isFetching || loadingRows ? (
         <div
           data-ocid="datagrid.loading_state"
-          className="text-terminal-muted text-xs py-4 tracking-widest"
+          className="text-muted-foreground text-xs py-4 font-data"
         >
-          [LOADING...]
+          Loading...
         </div>
       ) : filteredRows.length === 0 ? (
         <div
           data-ocid="datagrid.empty_state"
-          className="border border-dashed border-terminal-border text-terminal-muted text-[11px] tracking-widest py-5 px-4"
+          className="border border-dashed border-border rounded-lg text-muted-foreground text-sm py-8 px-6 text-center"
         >
-          [NO DATA BLOCKS LOADED. ADD MASTER SPEC ROWS ABOVE.]
+          No data blocks loaded. Add master spec rows above.
         </div>
       ) : (
-        <div data-ocid="datagrid.table" className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs font-mono">
-            <thead>
-              <tr className="border-b border-terminal-border">
-                <th className="text-left text-[10px] text-terminal-green-dim tracking-widest uppercase px-3 py-2">
-                  COMPONENT
-                </th>
-                <th className="text-left text-[10px] text-terminal-green-dim tracking-widest uppercase px-3 py-2">
-                  SPECIFICATION
-                </th>
-                <th className="text-left text-[10px] text-terminal-green-dim tracking-widest uppercase px-3 py-2">
-                  TOOLS REQUIRED
-                </th>
-                <th className="text-right text-[10px] text-terminal-green-dim tracking-widest uppercase px-3 py-2">
-                  [DEL]
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row, idx) => (
-                <tr
-                  key={row.id}
-                  data-ocid={`datagrid.row.${idx + 1}`}
-                  className="border-b border-terminal-border/50 hover:bg-terminal-surface-raised transition-colors duration-100"
-                >
-                  <td className="px-3 py-2.5 text-terminal-green">
-                    {row.component || (
-                      <span className="text-terminal-muted">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-terminal-muted max-w-xs">
-                    <span className="line-clamp-2">
-                      {row.specification || "—"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-terminal-muted">
-                    {row.toolsRequired || (
-                      <span className="text-terminal-muted">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <TerminalButton
-                      data-ocid={`datagrid.delete_button.${idx + 1}`}
-                      variant="amber"
-                      onClick={() => void handleDeleteRow(row.id)}
-                      className="text-[10px] px-2 py-1"
-                    >
-                      [DEL]
-                    </TerminalButton>
-                  </td>
+        <div
+          data-ocid="datagrid.table"
+          className="border border-border bg-card card-shadow rounded-lg overflow-hidden"
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface">
+                  <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3">
+                    Component
+                  </th>
+                  <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3">
+                    Specification
+                  </th>
+                  <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3">
+                    Tools Required
+                  </th>
+                  <th className="text-right text-xs font-medium text-muted-foreground px-4 py-3">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    data-ocid={`datagrid.row.${idx + 1}`}
+                    className="border-b border-border/50 last:border-0 hover:bg-surface-raised transition-colors duration-100"
+                  >
+                    <td className="px-4 py-3 text-foreground font-data text-sm">
+                      {row.component || (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground font-data text-sm max-w-xs">
+                      <span className="line-clamp-2">
+                        {row.specification || "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground font-data text-sm">
+                      {row.toolsRequired || (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <EnterpriseButton
+                        data-ocid={`datagrid.delete_button.${idx + 1}`}
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleDeleteRow(row.id)}
+                      >
+                        Delete
+                      </EnterpriseButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>
@@ -585,79 +613,117 @@ export default function TacticalMechanicView() {
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <div className="boot-in px-4 sm:px-6 py-6 font-mono max-w-5xl mx-auto">
-      {/* ── Boot header ──────────────────────────────────────────────── */}
-      <div className="mb-6 space-y-1">
-        <div className="type-in-1 flex items-center gap-2 text-xs">
-          <span className="text-terminal-green-dim select-none">[TM-01]</span>
-          <span className="text-terminal-muted">
-            TACTICAL MECHANIC MODULE — ACTIVE
+    <div className="boot-in px-4 sm:px-6 py-6 max-w-5xl mx-auto">
+      {/* ── Module header ─────────────────────────────────────────── */}
+      <div className="mb-7 space-y-2">
+        <div className="flex items-center gap-2.5 text-xs">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-primary/10 text-primary border border-primary/20 select-none">
+            [MC-05]
+          </span>
+          <span className="text-muted-foreground">
+            Mechanics Sector Module — Active
           </span>
         </div>
-        <div className="type-in-2 flex items-center gap-2 text-xs">
-          <span className="text-terminal-green-dim select-none">[VRS]</span>
-          <span className="text-terminal-muted">
-            VERASLi™ INDEXING ENGINE READY
+        <div className="flex items-center gap-2.5 text-xs">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted text-muted-foreground border border-border select-none">
+            [VRS]
+          </span>
+          <span className="text-muted-foreground">
+            VERASLi™ Indexing Engine Ready
           </span>
         </div>
-        <div className="type-in-3 flex items-center gap-2 text-xs">
-          <span className="text-terminal-green select-none font-semibold">
-            &gt;
-          </span>
-          <span className="text-terminal-amber font-semibold text-glow-amber">
-            CONTEXT: 2009 TOYOTA CAMRY / 2AZ-FE ENGINE
+        <div className="flex items-center gap-2.5 text-xs pt-1">
+          <span className="text-primary font-semibold">›</span>
+          <span className="text-status-warning font-medium font-data">
+            Context: 2009 Toyota Camry / 2AZ-FE Engine
           </span>
         </div>
       </div>
 
-      {/* ── Search bar ───────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 border border-terminal-green bg-terminal-bg px-3 py-2 focus-within:ring-1 focus-within:ring-terminal-green/30">
-          <span className="text-terminal-green-dim text-[11px] tracking-widest select-none whitespace-nowrap">
-            [SEARCH VERASLi™ INDEX]
-          </span>
-          <span className="text-terminal-border select-none">│</span>
+      {/* ── Search bar ───────────────────────────────────────────── */}
+      <div className="mb-7">
+        <div className="relative">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+            />
+          </svg>
           <input
             data-ocid="tactical.search_input"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="FILTER KNOWLEDGE SINK + DATA GRID..."
-            className="flex-1 bg-transparent text-terminal-green placeholder-terminal-muted text-xs font-mono tracking-wide focus:outline-none"
+            placeholder="Search VERASLi™ index — knowledge sink + data grid..."
+            className={[
+              "w-full bg-input border border-border text-foreground placeholder-muted-foreground",
+              "pl-9 pr-10 py-2.5 text-sm font-sans",
+              "rounded-lg card-shadow-sm",
+              "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+              "transition-colors duration-150",
+            ].join(" ")}
             aria-label="Search VERASLi index"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="text-terminal-muted hover:text-terminal-amber text-[11px] tracking-widest transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs transition-colors p-1"
               aria-label="Clear search"
             >
-              [CLR]
+              ✕
             </button>
           )}
         </div>
         {searchQuery && (
-          <div className="mt-1 text-[10px] text-terminal-muted tracking-widest">
-            FILTERING: &quot;{searchQuery}&quot;
+          <div className="mt-1.5 text-[11px] text-muted-foreground">
+            Filtering: &quot;{searchQuery}&quot;
           </div>
         )}
       </div>
 
-      {/* ── Knowledge Sink ───────────────────────────────────────────── */}
+      {/* ── Knowledge Sink ───────────────────────────────────────── */}
       <KnowledgeSink searchQuery={searchQuery} />
 
-      {/* ── Data Grid ────────────────────────────────────────────────── */}
+      {/* ── Data Grid ────────────────────────────────────────────── */}
       <DataGrid searchQuery={searchQuery} />
 
-      {/* ── Status legend ────────────────────────────────────────────── */}
-      <div className="mt-10 pt-4 border-t border-terminal-border flex flex-wrap gap-4 text-[10px] tracking-widest">
-        <span className="text-terminal-green text-glow-green">
-          ◉ STATUS: OK
+      {/* ── Status legend ────────────────────────────────────────── */}
+      <div className="mt-10 pt-4 border-t border-border flex flex-wrap gap-5">
+        <span className="flex items-center gap-2 text-status-ok text-xs font-medium">
+          <span className="inline-block w-2 h-2 rounded-full status-dot-ok" />
+          Status: OK
         </span>
-        <span className="text-terminal-amber">⚠ WARNING</span>
-        <span className="text-terminal-muted">○ OFFLINE / MUTED</span>
+        <span className="flex items-center gap-2 text-status-warning text-xs font-medium">
+          <span className="inline-block w-2 h-2 rounded-full status-dot-warning" />
+          Warning
+        </span>
+        <span className="flex items-center gap-2 text-muted-foreground text-xs">
+          <span className="inline-block w-2 h-2 rounded-full status-dot-offline" />
+          Offline / Muted
+        </span>
       </div>
+
+      {/* ── Footer ───────────────────────────────────────────────── */}
+      <footer className="mt-10 pt-4 border-t border-border text-muted-foreground text-xs">
+        © {new Date().getFullYear()}.{" "}
+        <a
+          href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-foreground transition-colors duration-150 underline underline-offset-2"
+        >
+          Built with ♥ using caffeine.ai
+        </a>
+      </footer>
     </div>
   );
 }

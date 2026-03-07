@@ -8,6 +8,18 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const SearchResult = IDL.Record({
+  'url' : IDL.Text,
+  'title' : IDL.Text,
+  'snippet' : IDL.Text,
+});
+export const AgenticResult = IDL.Record({
+  'contextMode' : IDL.Text,
+  'results' : IDL.Vec(SearchResult),
+  'timestamp' : IDL.Int,
+  'searchQuery' : IDL.Text,
+  'actionableSummary' : IDL.Text,
+});
 export const DataRow = IDL.Record({
   'id' : IDL.Text,
   'component' : IDL.Text,
@@ -21,20 +33,44 @@ export const KnowledgeDoc = IDL.Record({
   'content' : IDL.Text,
   'createdAt' : IDL.Int,
 });
+export const ScanResult = IDL.Record({
+  'id' : IDL.Text,
+  'contextMode' : IDL.Text,
+  'analysisText' : IDL.Text,
+  'timestamp' : IDL.Int,
+  'thumbnailSummary' : IDL.Text,
+});
 
 export const idlService = IDL.Service({
+  'agenticScan' : IDL.Func([IDL.Text, IDL.Text], [AgenticResult], []),
   'deleteDataRow' : IDL.Func([IDL.Text], [], []),
   'deleteKnowledgeDoc' : IDL.Func([IDL.Text], [], []),
+  'deleteScanResult' : IDL.Func([IDL.Text], [], []),
   'getDataRows' : IDL.Func([], [IDL.Vec(DataRow)], ['query']),
   'getKnowledgeDocs' : IDL.Func([], [IDL.Vec(KnowledgeDoc)], ['query']),
+  'getScanResults' : IDL.Func([], [IDL.Vec(ScanResult)], ['query']),
   'saveDataRow' : IDL.Func([DataRow], [], []),
   'saveKnowledgeDoc' : IDL.Func([KnowledgeDoc], [], []),
+  'saveScanResult' : IDL.Func([ScanResult], [], []),
+  'webSearch' : IDL.Func([IDL.Text], [IDL.Vec(SearchResult)], []),
   'whoami' : IDL.Func([], [IDL.Principal], []),
 });
 
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const SearchResult = IDL.Record({
+    'url' : IDL.Text,
+    'title' : IDL.Text,
+    'snippet' : IDL.Text,
+  });
+  const AgenticResult = IDL.Record({
+    'contextMode' : IDL.Text,
+    'results' : IDL.Vec(SearchResult),
+    'timestamp' : IDL.Int,
+    'searchQuery' : IDL.Text,
+    'actionableSummary' : IDL.Text,
+  });
   const DataRow = IDL.Record({
     'id' : IDL.Text,
     'component' : IDL.Text,
@@ -48,14 +84,26 @@ export const idlFactory = ({ IDL }) => {
     'content' : IDL.Text,
     'createdAt' : IDL.Int,
   });
+  const ScanResult = IDL.Record({
+    'id' : IDL.Text,
+    'contextMode' : IDL.Text,
+    'analysisText' : IDL.Text,
+    'timestamp' : IDL.Int,
+    'thumbnailSummary' : IDL.Text,
+  });
   
   return IDL.Service({
+    'agenticScan' : IDL.Func([IDL.Text, IDL.Text], [AgenticResult], []),
     'deleteDataRow' : IDL.Func([IDL.Text], [], []),
     'deleteKnowledgeDoc' : IDL.Func([IDL.Text], [], []),
+    'deleteScanResult' : IDL.Func([IDL.Text], [], []),
     'getDataRows' : IDL.Func([], [IDL.Vec(DataRow)], ['query']),
     'getKnowledgeDocs' : IDL.Func([], [IDL.Vec(KnowledgeDoc)], ['query']),
+    'getScanResults' : IDL.Func([], [IDL.Vec(ScanResult)], ['query']),
     'saveDataRow' : IDL.Func([DataRow], [], []),
     'saveKnowledgeDoc' : IDL.Func([KnowledgeDoc], [], []),
+    'saveScanResult' : IDL.Func([ScanResult], [], []),
+    'webSearch' : IDL.Func([IDL.Text], [IDL.Vec(SearchResult)], []),
     'whoami' : IDL.Func([], [IDL.Principal], []),
   });
 };
