@@ -42,6 +42,21 @@ export interface SearchResult {
   'title' : string,
   'snippet' : string,
 }
+export interface TransformationInput {
+  'context' : Uint8Array,
+  'response' : http_request_result,
+}
+export interface TransformationOutput {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
+export interface http_header { 'value' : string, 'name' : string }
+export interface http_request_result {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
 export interface _SERVICE {
   'agenticScan' : ActorMethod<[string, string], AgenticResult>,
   'deleteDataRow' : ActorMethod<[string], undefined>,
@@ -53,6 +68,8 @@ export interface _SERVICE {
   'saveDataRow' : ActorMethod<[DataRow], undefined>,
   'saveKnowledgeDoc' : ActorMethod<[KnowledgeDoc], undefined>,
   'saveScanResult' : ActorMethod<[ScanResult], undefined>,
+  'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
+  'visionScan' : ActorMethod<[string, string, string], string>,
   'webSearch' : ActorMethod<[string], Array<SearchResult>>,
   'whoami' : ActorMethod<[], Principal>,
 }

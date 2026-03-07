@@ -1,39 +1,34 @@
-# VERASLi Universal Specialist v2
+# VERASLi™ | Universal Specialist v2
 
 ## Current State
-The app has a working 3-mode frontend (Tactical Mechanic, Academic Auditor, Environmental Command) with:
-- Motoko backend storing KnowledgeDoc, DataRow, ScanResult per Principal
-- TacticalMechanicView with Knowledge Sink + Data Grid
-- LiveVisionHUD with 3-phase agentic scan (Vision → Web Search → Synthesis)
-- `agenticScan(imageDescription, contextMode)` backend function returning AgenticResult
-- Enterprise dark-mode UI (Sora + JetBrains Mono, charcoal-slate bg, metallic blue accents)
 
-Backend compiles successfully (warnings only, no errors).
+The app has five enterprise sector tabs (Healthcare, Technology, Education, Construction, Mechanics) with a Live Vision HUD in the Construction tab. Phase 1 of the scan pipeline calls the Ollama vision model directly from the browser via `fetch()` to `http://localhost:11434/api/generate` using the `llava` model. This is a fully client-side call. The backend `agenticScan` function is a stub that returns placeholder text and is only used for record-keeping calls after the frontend has already completed the vision analysis. The Motoko backend already imports the `http-outcalls/outcall.mo` module.
 
 ## Requested Changes (Diff)
 
 ### Add
-- 5 new enterprise sector modes: Healthcare, Technology, Education, Construction, Mechanics
-- Per-sector accent colors: Cyan (Healthcare), Blue (Technology), Amber (Education), Orange (Construction), Green (Mechanics)
-- "Auto-Detecting Environment..." HUD overlay visual state during Phase 1
-- "Context Locked: [Sector]" flash notification after auto-detection
-- Backend `agenticScan` sector routing: each mode appends domain-specific keywords to the web search query
+
+- New Motoko function `visionScan(imageBase64: Text, prompt: Text, contextMode: Text)` that performs a server-side HTTPS POST outcall to `https://ollama.com/api/generate` with:
+  - Header: `Authorization: Bearer YOUR_API_KEY_HERE`
+  - Header: `Content-Type: application/json`
+  - Body: `{ "model": "llama3.2-vision", "prompt": "<prompt>", "images": ["<imageBase64>"], "stream": false }`
+  - Returns `Text` (the raw JSON response from Ollama Cloud)
+- New type `VisionScanResult` exposed to frontend: `{ response: Text; contextMode: Text; timestamp: Int }`
 
 ### Modify
-- Replace the 3 context modes in App.tsx with 5 new sector modes
-- Update LiveVisionHUD Phase 1 vision prompt to request JSON output: `{ detected_mode, image_description }`
-- Frontend state management: auto-switch active sector based on `detected_mode` from Phase 1 response
-- HUD bottom bar: show sector lock notification after detection, then display search results
-- Context suffixes updated per sector for DuckDuckGo query biasing
+
+- `main.mo`: Import and use `outcall.mo`'s `httpPostRequest` for the new `visionScan` function. The Bearer API key is hardcoded as a placeholder constant `OLLAMA_API_KEY`.
+- `LiveVisionHUD.tsx` (Phase 1): Replace the direct browser `fetch()` to localhost Ollama with a call to `actor.visionScan(base64, prompt, contextMode)`. Parse the returned JSON string client-side the same way as before (`data.response`). All downstream logic (JSON parse for detected_mode, sector lock, Phase 2 web search) remains unchanged.
+- Update `backend.d.ts` to expose `visionScan` method signature.
+- Update the HUD status label for Phase 1 from "Identifying via LLaVA..." to "Identifying via Ollama Cloud..." to reflect the new routing.
 
 ### Remove
-- "Tactical Mechanic", "Academic Auditor", "Environmental Command" hardcoded modes
-- Legacy shortcode labels [TM-01], [AA-02], [EC-03] in tabs (replace with sector codes)
+
+- The direct `fetch()` call to `${endpoint}/api/generate` (the localhost Ollama call) in `captureAndScan()`.
+- The `localStorage.getItem("verasli_ollama_endpoint")` lookup (no longer needed for Phase 1 since the call is now server-side).
 
 ## Implementation Plan
-1. Update `agenticScan` in Motoko backend to handle 5 sector modes with keyword biasing
-2. Replace TABS array in App.tsx with 5 sector tabs + per-sector accent colors
-3. Update LiveVisionHUD: new sector prompts requesting JSON, auto-detect state machine, sector-lock notification
-4. Update TacticalMechanicView header labels for new "Mechanics" sector branding
-5. Wire sector auto-detection callback from LiveVisionHUD up to App.tsx via prop
-6. Validate frontend and deploy
+
+1. Update `main.mo`: add `OLLAMA_API_KEY` constant, add `VisionScanResult` type, add `visionScan` public shared function that calls `OutCall.httpPostRequest` to `https://ollama.com/api/generate` with the Authorization header, prompt, and base64 image.
+2. Update `backend.d.ts`: add `visionScan` function signature.
+3. Update `LiveVisionHUD.tsx`: in `captureAndScan()`, replace the Phase 1 browser fetch block with `const rawJson = await actor.visionScan(base64, prompt, contextMode)` and parse `rawJson` as `{ response?: string }`. Update the phase label to say "Ollama Cloud". Remove the `endpoint` localStorage lookup.

@@ -341,7 +341,7 @@ function PhaseStatusLabel({
         style={{ color }}
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-        <span>PHASE 1 — VISION SCAN: Identifying via LLaVA...</span>
+        <span>PHASE 1 — VISION SCAN: Identifying via Ollama Cloud...</span>
       </div>
     );
   }
@@ -724,11 +724,6 @@ export default function LiveVisionHUD({
     const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
     const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
 
-    // Get Ollama endpoint from localStorage
-    const endpoint =
-      localStorage.getItem("verasli_ollama_endpoint") ||
-      "http://localhost:11434";
-
     setScanState("detecting");
     setScanResult("");
     setSearchQuery("");
@@ -740,22 +735,17 @@ export default function LiveVisionHUD({
 
     try {
       const prompt = getIdentificationPrompt();
-      const response = await fetch(`${endpoint}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "llava",
-          prompt,
-          images: [base64],
-          stream: false,
-        }),
-      });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (!actor) {
+        setScanState("error");
+        setScanResult("PHASE 1 FAILED — Not connected to backend.");
+        return;
       }
-
-      const data = (await response.json()) as { response?: string };
+      const rawJson = await actor.visionScan(base64, prompt, contextMode);
+      const data = JSON.parse(rawJson) as { response?: string; error?: string };
+      if (data.error) {
+        throw new Error(data.error);
+      }
       const rawResponse = data.response ?? "";
 
       // Try to parse JSON response
@@ -809,7 +799,9 @@ export default function LiveVisionHUD({
       }
     } catch {
       setScanState("error");
-      setScanResult("PHASE 1 FAILED — Ollama not reachable. Check endpoint.");
+      setScanResult(
+        "PHASE 1 FAILED — Ollama Cloud unreachable. Check API key in backend.",
+      );
       return;
     }
 
@@ -1017,7 +1009,7 @@ export default function LiveVisionHUD({
             ]
           </span>
           <span className="text-muted-foreground text-xs font-data">
-            Ollama / LLaVA Vision Bridge Ready
+            Ollama Cloud Vision API :: Server-Side
           </span>
         </div>
         <div className="flex items-center gap-2 mb-8">
