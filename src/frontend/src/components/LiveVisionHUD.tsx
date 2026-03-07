@@ -1225,7 +1225,10 @@ export default function LiveVisionHUD({
         )}
 
         {/* ── Top HUD bar ────────────────────────────────────────────── */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-2.5 bg-black/40 backdrop-blur-sm border-b border-white/10">
+        <div
+          className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-2.5 bg-black/40 backdrop-blur-sm border-b border-white/10"
+          style={{ pointerEvents: "auto", position: "relative", zIndex: 9998 }}
+        >
           {/* Left: status label */}
           <div className="flex items-center gap-2.5">
             <span
@@ -1301,6 +1304,7 @@ export default function LiveVisionHUD({
         <div
           data-ocid="hud.result_overlay"
           className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-black/60 backdrop-blur-md border-t border-white/10"
+          style={{ pointerEvents: "none" }}
         >
           {/* Phase status / result display */}
           <div className="mb-3 min-h-[3rem]">
@@ -1346,7 +1350,10 @@ export default function LiveVisionHUD({
           </div>
 
           {/* Scan button row */}
-          <div className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-between"
+            style={{ pointerEvents: "auto" }}
+          >
             <button
               type="button"
               data-ocid="hud.scan_button"
@@ -1354,6 +1361,10 @@ export default function LiveVisionHUD({
               disabled={isScanning}
               className="flex items-center gap-2 px-4 py-2 rounded text-[11px] font-data font-semibold tracking-widest uppercase transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
+                position: "relative",
+                zIndex: 9999,
+                cursor: isScanning ? "not-allowed" : "pointer",
+                pointerEvents: "auto",
                 background: isScanning
                   ? accentColor.replace(")", " / 0.25)")
                   : accentColor.replace(")", " / 0.9)"),
