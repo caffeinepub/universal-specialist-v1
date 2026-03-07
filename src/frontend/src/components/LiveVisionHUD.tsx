@@ -254,6 +254,23 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+async function compressFrameToBase64(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+): Promise<string> {
+  const MAX_DIM = 800;
+  const srcW = video.videoWidth || 640;
+  const srcH = video.videoHeight || 480;
+  const scale = Math.min(1, MAX_DIM / Math.max(srcW, srcH));
+  canvas.width = Math.round(srcW * scale);
+  canvas.height = Math.round(srcH * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas context unavailable");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+  return dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+}
+
 function formatTimestamp(ts: bigint): string {
   const ms = Number(ts);
   return new Date(ms).toLocaleString(undefined, {
@@ -713,45 +730,70 @@ export default function LiveVisionHUD({
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState < 2) return;
 
-    // Draw frame to canvas
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Get base64
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-    const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+    // Compress frame and extract raw base64
+    let base64: string;
+    try {
+      base64 = await compressFrameToBase64(video, canvas);
+    } catch {
+      setScanState("error");
+      setScanResult("CAPTURE FAILED — Could not read camera frame.");
+      return;
+    }
 
     setScanState("detecting");
     setScanResult("");
     setSearchQuery("");
     setSources([]);
 
-    // ── Phase 1: Vision Identification + Auto-Detection ───────────────────────
+    // ── Phase 1: Vision Identification via Client-Side Ollama fetch ────────────
     let imageDescription = "";
     let resolvedMode = contextMode;
 
     try {
-      const prompt = getIdentificationPrompt();
+      setScanState("detecting");
 
-      if (!actor) {
-        setScanState("error");
-        setScanResult("PHASE 1 FAILED — Not connected to backend.");
-        return;
-      }
-      const rawJson = await actor.visionScan(base64, prompt, contextMode);
-      const data = JSON.parse(rawJson) as { response?: string; error?: string };
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      const rawResponse = data.response ?? "";
+      const ollamaPayload = {
+        model: "llama3.2-vision",
+        messages: [
+          {
+            role: "user",
+            content: getIdentificationPrompt(),
+            images: [base64],
+          },
+        ],
+        stream: false,
+      };
 
-      // Try to parse JSON response
+      const ollamaResponse = await fetch("https://ollama.com/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            "Bearer 20e8ce26d8cb4c309ea2c322664dab3d.4GJqlggusiNHT789Xai23dp0",
+        },
+        body: JSON.stringify(ollamaPayload),
+      });
+
+      if (!ollamaResponse.ok) {
+        throw new Error(
+          `Ollama API responded with HTTP ${ollamaResponse.status}`,
+        );
+      }
+
+      const ollamaData = (await ollamaResponse.json()) as {
+        message?: { content?: string };
+        error?: string;
+      };
+
+      if (ollamaData.error) {
+        throw new Error(ollamaData.error);
+      }
+
+      const rawResponse = ollamaData.message?.content ?? "";
+
+      // Try to parse JSON response for sector auto-detection
       setScanState("identifying");
       try {
-        // Strip any markdown code block wrappers if present
         const cleaned = rawResponse
           .replace(/^```(?:json)?\s*/i, "")
           .replace(/\s*```\s*$/, "")
@@ -776,7 +818,6 @@ export default function LiveVisionHUD({
           resolvedMode = parsed.detected_mode.toLowerCase();
           imageDescription = parsed.image_description ?? rawResponse;
 
-          // Show sector lock notification and call parent callback
           setDetectedSector(resolvedMode);
           setSectorLocked(true);
           if (sectorLockTimerRef.current)
@@ -787,20 +828,18 @@ export default function LiveVisionHUD({
           }, 2000);
           onSectorDetected?.(resolvedMode);
 
-          // Wait 2s for the notification to be visible before proceeding
           await new Promise<void>((resolve) => setTimeout(resolve, 2000));
         } else {
-          // JSON parsed but no valid detected_mode — use full response as description
           imageDescription = parsed.image_description ?? rawResponse;
         }
       } catch {
-        // JSON parse failed — use full response as image description
         imageDescription = rawResponse || "No response from model.";
       }
-    } catch {
+    } catch (err) {
       setScanState("error");
+      const msg = err instanceof Error ? err.message : "Unknown error";
       setScanResult(
-        "PHASE 1 FAILED — Ollama Cloud unreachable. Check API key in backend.",
+        `PHASE 1 FAILED — ${msg}. Check network connectivity or Ollama Cloud status.`,
       );
       return;
     }
@@ -1009,7 +1048,7 @@ export default function LiveVisionHUD({
             ]
           </span>
           <span className="text-muted-foreground text-xs font-data">
-            Ollama Cloud Vision API :: Server-Side
+            Ollama Cloud Vision API :: Client-Side
           </span>
         </div>
         <div className="flex items-center gap-2 mb-8">
