@@ -258,7 +258,8 @@ async function compressFrameToBase64(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
 ): Promise<string> {
-  const MAX_DIM = 800;
+  // Strictly enforce 600px max and JPEG quality 0.5 to stay under ICP's 2MB ingress limit
+  const MAX_DIM = 600;
   const srcW = video.videoWidth || 640;
   const srcH = video.videoHeight || 480;
   const scale = Math.min(1, MAX_DIM / Math.max(srcW, srcH));
@@ -267,7 +268,7 @@ async function compressFrameToBase64(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas context unavailable");
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
   return dataUrl.replace(/^data:image\/jpeg;base64,/, "");
 }
 
@@ -358,7 +359,7 @@ function PhaseStatusLabel({
         style={{ color }}
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-        <span>PHASE 1 — VISION SCAN: Identifying via Ollama Cloud...</span>
+        <span>PHASE 1 — VISION SCAN: Routing via ICP backend proxy...</span>
       </div>
     );
   }
@@ -745,56 +746,55 @@ export default function LiveVisionHUD({
     setSearchQuery("");
     setSources([]);
 
-    // ── Phase 1: Vision Identification via Client-Side Ollama fetch ────────────
+    // ── Phase 1: Vision Identification via Motoko backend proxy (CORS bypass) ──
     let imageDescription = "";
     let resolvedMode = contextMode;
+
+    if (!actor) {
+      setScanState("error");
+      setScanResult("PHASE 1 FAILED — Actor not ready. Please wait and retry.");
+      return;
+    }
 
     try {
       setScanState("detecting");
 
-      const ollamaPayload = {
-        model: "llama3.2-vision",
-        messages: [
-          {
-            role: "user",
-            content: getIdentificationPrompt(),
-            images: [base64],
-          },
-        ],
-        stream: false,
-      };
+      // Route through backend canister to bypass browser CORS block
+      const rawResponse = await actor.visionScan(
+        base64,
+        getIdentificationPrompt(),
+        contextMode,
+      );
 
-      const ollamaResponse = await fetch("https://ollama.com/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization:
-            "Bearer 20e8ce26d8cb4c309ea2c322664dab3d.4GJqlggusiNHT789Xai23dp0",
-        },
-        body: JSON.stringify(ollamaPayload),
-      });
-
-      if (!ollamaResponse.ok) {
-        throw new Error(
-          `Ollama API responded with HTTP ${ollamaResponse.status}`,
-        );
+      // Check if backend returned an error JSON
+      if (rawResponse.includes('"error"')) {
+        let errorDetail = rawResponse;
+        try {
+          const parsed = JSON.parse(rawResponse) as { error?: string };
+          if (parsed.error) errorDetail = parsed.error;
+        } catch {
+          // keep raw string
+        }
+        throw new Error(errorDetail);
       }
-
-      const ollamaData = (await ollamaResponse.json()) as {
-        message?: { content?: string };
-        error?: string;
-      };
-
-      if (ollamaData.error) {
-        throw new Error(ollamaData.error);
-      }
-
-      const rawResponse = ollamaData.message?.content ?? "";
 
       // Try to parse JSON response for sector auto-detection
       setScanState("identifying");
       try {
-        const cleaned = rawResponse
+        // Parse the /api/chat response envelope: { message: { content: "..." } }
+        let contentStr = rawResponse;
+        try {
+          const envelope = JSON.parse(rawResponse) as {
+            message?: { content?: string };
+            response?: string;
+          };
+          contentStr =
+            envelope.message?.content ?? envelope.response ?? rawResponse;
+        } catch {
+          // rawResponse may already be the content string
+        }
+
+        const cleaned = contentStr
           .replace(/^```(?:json)?\s*/i, "")
           .replace(/\s*```\s*$/, "")
           .trim();
@@ -816,7 +816,7 @@ export default function LiveVisionHUD({
           validModes.includes(parsed.detected_mode.toLowerCase())
         ) {
           resolvedMode = parsed.detected_mode.toLowerCase();
-          imageDescription = parsed.image_description ?? rawResponse;
+          imageDescription = parsed.image_description ?? contentStr;
 
           setDetectedSector(resolvedMode);
           setSectorLocked(true);
@@ -830,17 +830,16 @@ export default function LiveVisionHUD({
 
           await new Promise<void>((resolve) => setTimeout(resolve, 2000));
         } else {
-          imageDescription = parsed.image_description ?? rawResponse;
+          imageDescription = parsed.image_description ?? contentStr;
         }
       } catch {
+        // rawResponse is plain text — use it directly
         imageDescription = rawResponse || "No response from model.";
       }
     } catch (err) {
       setScanState("error");
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      setScanResult(
-        `PHASE 1 FAILED — ${msg}. Check network connectivity or Ollama Cloud status.`,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      setScanResult(`PHASE 1 FAILED — ${msg}`);
       return;
     }
 
@@ -1057,7 +1056,7 @@ export default function LiveVisionHUD({
             ]
           </span>
           <span className="text-muted-foreground text-xs font-data">
-            Ollama Cloud Vision API :: Client-Side
+            Ollama Cloud Vision API :: Backend Proxy
           </span>
         </div>
         <div className="flex items-center gap-2 mb-8">

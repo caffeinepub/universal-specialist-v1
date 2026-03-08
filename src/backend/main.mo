@@ -1,8 +1,9 @@
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
-import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
 import OutCall "http-outcalls/outcall";
+import Error "mo:core/Error";
+import Runtime "mo:core/Runtime";
 
 actor {
   public type KnowledgeDoc = {
@@ -46,8 +47,8 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let OLLAMA_API_KEY : Text = "YOUR_API_KEY_HERE";
-  let OLLAMA_CLOUD_ENDPOINT : Text = "https://ollama.com/api/generate";
+  let OLLAMA_API_KEY : Text = "20e8ce26d8cb4c309ea2c322664dab3d.4GJqlggusiNHT789Xai23dp0";
+  let OLLAMA_CLOUD_ENDPOINT : Text = "https://ollama.com/api/chat";
   let OLLAMA_VISION_MODEL : Text = "llama3.2-vision";
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
@@ -137,15 +138,16 @@ actor {
   };
 
   public shared ({ caller }) func visionScan(imageBase64 : Text, _prompt : Text, _contextMode : Text) : async Text {
-    let jsonBody = "{\"model\":\"" # OLLAMA_VISION_MODEL # "\",\"prompt\":\"Vision analysis request\",\"images\":[\"" # imageBase64 # "\"],\"stream\":false}";
+    let jsonBody = "{\"model\":\"" # OLLAMA_VISION_MODEL # "\",\"messages\":[{\"role\":\"user\",\"content\":\"" # _prompt # "\",\"images\":[\"" # imageBase64 # "\"]}],\"stream\":false}";
     let headers : [OutCall.Header] = [
       { name = "Authorization"; value = "Bearer " # OLLAMA_API_KEY },
       { name = "Content-Type"; value = "application/json" },
     ];
     try {
       await OutCall.httpPostRequest(OLLAMA_CLOUD_ENDPOINT, headers, jsonBody, transform);
-    } catch (_e) {
-      "{\"error\":\"Vision scan failed\"}";
+    } catch (e) {
+      let errorMessage = e.message();
+      "{\"error\":\"Vision scan failed: " # errorMessage # "\"}";
     };
   };
 
@@ -178,3 +180,4 @@ actor {
     };
   };
 };
+
