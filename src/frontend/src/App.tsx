@@ -23,6 +23,7 @@ interface SectorViewProps {
   principalId: string;
   actor: backendInterface | null;
   isActorReady: boolean;
+  actorError: string | null;
 }
 
 function SectorView({
@@ -33,6 +34,7 @@ function SectorView({
   principalId,
   actor,
   isActorReady,
+  actorError,
 }: SectorViewProps) {
   // Look up the active sector from taxonomy for display in the header
   const activeSector = ALL_SECTORS.find((s) => s.id === activeTab);
@@ -53,7 +55,7 @@ function SectorView({
       : principalId;
 
   return (
-    <ActorContext.Provider value={{ actor, isActorReady }}>
+    <ActorContext.Provider value={{ actor, isActorReady, actorError }}>
       <div className="min-h-screen bg-background font-sans flex flex-col">
         {/* ── Header ─────────────────────────────────────────────────── */}
         <header
@@ -109,31 +111,48 @@ function SectorView({
           <div className="flex-shrink-0 flex items-center gap-2">
             {/* Actor connection status indicator */}
             <span
+              data-ocid="header.actor_status"
               className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border font-data"
+              title={actorError ?? undefined}
               style={
-                isActorReady
+                actorError
                   ? {
-                      background: "oklch(0.55 0.18 145 / 0.12)",
-                      color: "oklch(0.72 0.2 145)",
-                      borderColor: "oklch(0.55 0.18 145 / 0.3)",
+                      background: "oklch(0.55 0.18 25 / 0.12)",
+                      color: "oklch(0.72 0.2 25)",
+                      borderColor: "oklch(0.55 0.18 25 / 0.3)",
                     }
-                  : {
-                      background: "oklch(0.6 0.15 55 / 0.12)",
-                      color: "oklch(0.75 0.18 55)",
-                      borderColor: "oklch(0.6 0.15 55 / 0.3)",
-                    }
+                  : isActorReady
+                    ? {
+                        background: "oklch(0.55 0.18 145 / 0.12)",
+                        color: "oklch(0.72 0.2 145)",
+                        borderColor: "oklch(0.55 0.18 145 / 0.3)",
+                      }
+                    : {
+                        background: "oklch(0.6 0.15 55 / 0.12)",
+                        color: "oklch(0.75 0.18 55)",
+                        borderColor: "oklch(0.6 0.15 55 / 0.3)",
+                      }
               }
             >
               <span
                 className="inline-block w-1.5 h-1.5 rounded-full"
                 style={{
-                  background: isActorReady
-                    ? "oklch(0.72 0.2 145)"
-                    : "oklch(0.75 0.18 55)",
-                  animation: isActorReady ? "none" : "pulse 1.5s infinite",
+                  background: actorError
+                    ? "oklch(0.72 0.2 25)"
+                    : isActorReady
+                      ? "oklch(0.72 0.2 145)"
+                      : "oklch(0.75 0.18 55)",
+                  animation:
+                    !isActorReady && !actorError
+                      ? "pulse 1.5s infinite"
+                      : "none",
                 }}
               />
-              {isActorReady ? "BACKEND: READY" : "CONNECTING..."}
+              {actorError
+                ? "BACKEND: FAILED"
+                : isActorReady
+                  ? "BACKEND: READY"
+                  : "CONNECTING..."}
             </span>
             <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 font-data">
               AUTHENTICATED
@@ -182,7 +201,10 @@ export default function App() {
   // ── Actor state: initialized at App level, bound to auth identity ──────────
   const [actor, setActor] = useState<backendInterface | null>(null);
   const [isActorReady, setIsActorReady] = useState(false);
-  const actorInitRef = useRef(false);
+  const [actorError, setActorError] = useState<string | null>(null);
+  // Track the principal string for which we last attempted init — stored in a
+  // ref so the effect can read it without needing it as a reactive dependency.
+  const lastInitializedPrincipalRef = useRef<string | null>(null);
 
   // Initialize actor whenever identity changes (including after login)
   useEffect(() => {
@@ -192,16 +214,28 @@ export default function App() {
     if (!identity || identity.getPrincipal().isAnonymous()) {
       setActor(null);
       setIsActorReady(false);
-      actorInitRef.current = false;
+      setActorError(null);
+      lastInitializedPrincipalRef.current = null;
       return;
     }
 
-    // Avoid duplicate initialization for the same identity
     const principalStr = identity.getPrincipal().toString();
-    if (actorInitRef.current) return;
-    actorInitRef.current = true;
 
-    // Create a properly authenticated actor bound to this identity
+    // Skip if we already successfully initialized for this exact principal
+    if (lastInitializedPrincipalRef.current === principalStr) {
+      return;
+    }
+
+    // Mark that we're initializing for this principal to prevent duplicate calls
+    lastInitializedPrincipalRef.current = principalStr;
+    setIsActorReady(false);
+    setActorError(null);
+
+    console.info("[VERASLi] Initializing actor for principal:", principalStr);
+
+    // Explicitly create actor with the authenticated identity.
+    // This ensures the HttpAgent uses the correct cryptographic delegation
+    // rather than the anonymous identity present during initial page load.
     void (async () => {
       try {
         const newActor = await createActorWithConfig({
@@ -209,14 +243,14 @@ export default function App() {
         });
         setActor(newActor);
         setIsActorReady(true);
-        console.info(
-          "[VERASLi] Actor initialized for principal:",
-          principalStr,
-        );
-      } catch (err) {
-        console.error("[VERASLi] Actor initialization failed:", err);
+        console.info("[VERASLi] Actor ready for principal:", principalStr);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[VERASLi] Actor initialization FAILED:", err);
+        setActorError(`Backend Connection Failed: ${msg}`);
         setIsActorReady(false);
-        actorInitRef.current = false; // allow retry
+        // Reset so the next identity event (or re-mount) can retry
+        lastInitializedPrincipalRef.current = null;
       }
     })();
   }, [identity, isInitializing]);
@@ -247,7 +281,8 @@ export default function App() {
     // Reset actor on sign out
     setActor(null);
     setIsActorReady(false);
-    actorInitRef.current = false;
+    setActorError(null);
+    lastInitializedPrincipalRef.current = null;
   };
 
   const handleBackToDashboard = () => {
@@ -279,6 +314,7 @@ export default function App() {
       principalId={identity?.getPrincipal().toString() ?? ""}
       actor={actor}
       isActorReady={isActorReady}
+      actorError={actorError}
     />
   );
 }

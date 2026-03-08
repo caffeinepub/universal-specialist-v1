@@ -617,7 +617,7 @@ export default function LiveVisionHUD({
   onSectorDetected,
 }: LiveVisionHUDProps) {
   // Consume actor from the global ActorContext (initialized at App level, bound to auth)
-  const { actor, isActorReady } = useActorContext();
+  const { actor, isActorReady, actorError } = useActorContext();
 
   // Camera state
   const [cameraState, setCameraState] = useState<CameraState>("idle");
@@ -1563,12 +1563,21 @@ export default function LiveVisionHUD({
 
             {/* Idle */}
             {scanState === "idle" && (
-              <p className="text-white/30 text-xs font-data italic">
-                {!isActorReady || !actor
-                  ? "Establishing connection to backend canister..."
-                  : webSearchEnabled
-                    ? "No analysis yet — tap INITIALIZE SCAN to begin agentic web search."
-                    : "No analysis yet — tap INITIALIZE SCAN to begin (vision-only mode)."}
+              <p
+                className="text-xs font-data italic"
+                style={{
+                  color: actorError
+                    ? "oklch(0.72 0.2 25)"
+                    : "oklch(1 0 0 / 0.3)",
+                }}
+              >
+                {actorError
+                  ? actorError
+                  : !isActorReady || !actor
+                    ? "Establishing connection to backend canister..."
+                    : webSearchEnabled
+                      ? "No analysis yet — tap INITIALIZE SCAN to begin agentic web search."
+                      : "No analysis yet — tap INITIALIZE SCAN to begin (vision-only mode)."}
               </p>
             )}
           </div>
@@ -1582,26 +1591,34 @@ export default function LiveVisionHUD({
               type="button"
               data-ocid="hud.scan_button"
               onClick={() => void captureAndScan()}
-              disabled={isScanning || !isActorReady || !actor}
+              disabled={isScanning || !isActorReady || !actor || !!actorError}
               className="flex items-center gap-2 px-4 py-2 rounded text-[11px] font-data font-semibold tracking-widest uppercase transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 position: "relative",
                 zIndex: 9999,
                 cursor:
-                  isScanning || !isActorReady || !actor
+                  isScanning || !isActorReady || !actor || !!actorError
                     ? "not-allowed"
                     : "pointer",
                 pointerEvents: "auto",
-                background:
-                  isScanning || !isActorReady || !actor
+                background: actorError
+                  ? "oklch(0.55 0.18 25 / 0.25)"
+                  : isScanning || !isActorReady || !actor
                     ? accentColor.replace(")", " / 0.25)")
                     : accentColor.replace(")", " / 0.9)"),
-                color: "oklch(0.08 0 0)",
+                color: actorError ? "oklch(0.72 0.2 25)" : "oklch(0.08 0 0)",
                 boxShadow: `0 2px 12px ${accentColor.replace(")", " / 0.3)")}`,
-                border: `1px solid ${accentColor.replace(")", " / 0.4)")}`,
+                border: `1px solid ${actorError ? "oklch(0.55 0.18 25 / 0.4)" : accentColor.replace(")", " / 0.4)")}`,
               }}
             >
-              {!isActorReady || !actor ? (
+              {actorError ? (
+                <>
+                  <span className="w-3.5 h-3.5 flex-shrink-0 text-base leading-none">
+                    ✕
+                  </span>
+                  BACKEND CONNECTION FAILED
+                </>
+              ) : !isActorReady || !actor ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   CONNECTING TO BACKEND...
