@@ -1,10 +1,12 @@
 import { Actor, HttpAgent } from "@dfinity/agent";
-import { ArrowLeft, LogOut } from "lucide-react";
+import { ArrowLeft, Clock, LogOut, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { backendInterface } from "./backend";
 import AuthLock from "./components/AuthLock";
 import Dashboard, { type ContextMode } from "./components/Dashboard";
 import LiveVisionHUD from "./components/LiveVisionHUD";
+import SessionHistory from "./components/SessionHistory";
+import SettingsMenu from "./components/SettingsMenu";
 import { loadConfig } from "./config";
 import { ActorContext } from "./context/ActorContext";
 import { ALL_SECTORS } from "./data/taxonomy";
@@ -93,7 +95,7 @@ async function buildActor(
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppState = "locked" | "dashboard" | "sector";
+type AppState = "locked" | "dashboard" | "sector" | "history";
 
 // ─── Sector View (authenticated, sector selected) ─────────────────────────────
 
@@ -102,6 +104,8 @@ interface SectorViewProps {
   setActiveTab: (tab: string) => void;
   onBackToDashboard: () => void;
   onSignOut: () => void;
+  onGoToHistory: () => void;
+  onOpenSettings: () => void;
   principalId: string;
   actor: backendInterface | null;
   isActorReady: boolean;
@@ -113,6 +117,8 @@ function SectorView({
   setActiveTab,
   onBackToDashboard,
   onSignOut,
+  onGoToHistory,
+  onOpenSettings,
   principalId,
   actor,
   isActorReady,
@@ -189,7 +195,7 @@ function SectorView({
             </div>
           </div>
 
-          {/* Right: actor status + auth status + principal + sign out */}
+          {/* Right: actor status + auth status + principal + history + settings + sign out */}
           <div className="flex-shrink-0 flex items-center gap-2">
             {/* Actor connection status indicator */}
             <span
@@ -236,12 +242,37 @@ function SectorView({
                   ? "BACKEND: READY"
                   : "CONNECTING..."}
             </span>
-            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 font-data">
+            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 font-data">
               AUTHENTICATED
             </span>
-            <span className="hidden md:inline text-muted-foreground text-[10px] font-data whitespace-nowrap">
+            <span className="hidden lg:inline text-muted-foreground text-[10px] font-data whitespace-nowrap">
               {truncatedPrincipal}
             </span>
+
+            {/* History button */}
+            <button
+              type="button"
+              data-ocid="navbar.history_button"
+              onClick={onGoToHistory}
+              title="Session History"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-all duration-150 text-muted-foreground hover:text-foreground text-xs font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            >
+              <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden lg:inline">HISTORY</span>
+            </button>
+
+            {/* Settings button */}
+            <button
+              type="button"
+              data-ocid="navbar.settings_button"
+              onClick={onOpenSettings}
+              title="Settings"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-all duration-150 text-muted-foreground hover:text-foreground text-xs font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            >
+              <Settings className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden lg:inline">SETTINGS</span>
+            </button>
+
             <button
               type="button"
               data-ocid="header.sign_out_button"
@@ -348,6 +379,9 @@ export default function App() {
     }
   }, [identity, isInitializing]);
 
+  // ── Settings / History state ────────────────────────────────────────────────
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleSectorSelect = (sector: string) => {
@@ -359,6 +393,7 @@ export default function App() {
     clear();
     setAppState("locked");
     setActiveSector("");
+    setSettingsOpen(false);
     // Reset actor on sign out
     setActor(null);
     setIsActorReady(false);
@@ -370,6 +405,17 @@ export default function App() {
     setAppState("dashboard");
   };
 
+  const handleGoToHistory = () => {
+    setAppState("history");
+  };
+
+  const handleBackFromHistory = () => {
+    setAppState("dashboard");
+  };
+
+  // ── Shared principal ID ─────────────────────────────────────────────────────
+  const principalId = identity?.getPrincipal().toString() ?? "";
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (appState === "locked") {
@@ -378,24 +424,65 @@ export default function App() {
 
   if (appState === "dashboard") {
     return (
-      <Dashboard
-        onSectorSelect={handleSectorSelect}
-        onSignOut={handleSignOut}
-      />
+      <>
+        <Dashboard
+          onSectorSelect={handleSectorSelect}
+          onSignOut={handleSignOut}
+          onGoToHistory={handleGoToHistory}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsMenu
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          principalId={principalId}
+          onSignOut={handleSignOut}
+          actor={actor}
+        />
+      </>
+    );
+  }
+
+  if (appState === "history") {
+    return (
+      <ActorContext.Provider value={{ actor, isActorReady, actorError }}>
+        <SessionHistory
+          principalId={principalId}
+          onBack={handleBackFromHistory}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsMenu
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          principalId={principalId}
+          onSignOut={handleSignOut}
+          actor={actor}
+        />
+      </ActorContext.Provider>
     );
   }
 
   // appState === "sector"
   return (
-    <SectorView
-      activeTab={activeSector}
-      setActiveTab={setActiveSector}
-      onBackToDashboard={handleBackToDashboard}
-      onSignOut={handleSignOut}
-      principalId={identity?.getPrincipal().toString() ?? ""}
-      actor={actor}
-      isActorReady={isActorReady}
-      actorError={actorError}
-    />
+    <>
+      <SectorView
+        activeTab={activeSector}
+        setActiveTab={setActiveSector}
+        onBackToDashboard={handleBackToDashboard}
+        onSignOut={handleSignOut}
+        onGoToHistory={handleGoToHistory}
+        onOpenSettings={() => setSettingsOpen(true)}
+        principalId={principalId}
+        actor={actor}
+        isActorReady={isActorReady}
+        actorError={actorError}
+      />
+      <SettingsMenu
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        principalId={principalId}
+        onSignOut={handleSignOut}
+        actor={actor}
+      />
+    </>
   );
 }

@@ -3,9 +3,11 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronDown,
+  Clock,
   Copy,
   Loader2,
   LogOut,
+  Settings,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ScanResult } from "../backend";
@@ -21,6 +23,8 @@ export type ContextMode = string;
 export interface DashboardProps {
   onSectorSelect: (sector: ContextMode) => void;
   onSignOut: () => void;
+  onGoToHistory?: () => void;
+  onOpenSettings?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -295,6 +299,8 @@ function ActivityItem({
 export default function Dashboard({
   onSectorSelect,
   onSignOut,
+  onGoToHistory,
+  onOpenSettings,
 }: DashboardProps) {
   const { identity, clear } = useInternetIdentity();
   const { actor } = useActor();
@@ -405,7 +411,7 @@ export default function Dashboard({
           </span>
         </div>
 
-        {/* Right: principal + sign out */}
+        {/* Right: principal + history + settings + sign out */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Principal ID copy */}
           <button
@@ -427,6 +433,34 @@ export default function Dashboard({
               <Copy className="w-3 h-3 text-muted-foreground flex-shrink-0 group-hover:text-primary transition-colors" />
             )}
           </button>
+
+          {/* History button */}
+          {onGoToHistory && (
+            <button
+              type="button"
+              data-ocid="navbar.history_button"
+              onClick={onGoToHistory}
+              title="Session History"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-all duration-150 text-muted-foreground hover:text-foreground text-[11px] font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            >
+              <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden md:inline">HISTORY</span>
+            </button>
+          )}
+
+          {/* Settings button */}
+          {onOpenSettings && (
+            <button
+              type="button"
+              data-ocid="navbar.settings_button"
+              onClick={onOpenSettings}
+              title="Settings"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-all duration-150 text-muted-foreground hover:text-foreground text-[11px] font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            >
+              <Settings className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden md:inline">SETTINGS</span>
+            </button>
+          )}
 
           {/* Sign out */}
           <button
