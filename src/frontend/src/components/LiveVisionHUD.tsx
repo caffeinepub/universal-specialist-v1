@@ -968,6 +968,15 @@ export default function LiveVisionHUD({
     };
   }, []);
 
+  // ── Re-assign srcObject when camera is granted (handles late-mounted ref) ────
+
+  useEffect(() => {
+    if (cameraState === "granted" && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraState]);
+
   // ── Delete history item ──────────────────────────────────────────────────────
 
   const handleDeleteResult = async (id: string) => {
@@ -1193,6 +1202,20 @@ export default function LiveVisionHUD({
           playsInline
           muted
           className="w-full h-full object-cover"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+            backgroundColor: "#000",
+            minWidth: 0,
+            minHeight: 0,
+          }}
+          onLoadedMetadata={() => {
+            if (videoRef.current) {
+              videoRef.current.play().catch(() => {});
+            }
+          }}
           aria-label="Live camera feed"
         />
 
@@ -1258,7 +1281,7 @@ export default function LiveVisionHUD({
         {/* ── Top HUD bar ────────────────────────────────────────────── */}
         <div
           className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-2.5 bg-black/40 backdrop-blur-sm border-b border-white/10"
-          style={{ pointerEvents: "auto", position: "relative", zIndex: 9998 }}
+          style={{ pointerEvents: "auto", zIndex: 9998 }}
         >
           {/* Left: status label */}
           <div className="flex items-center gap-2.5">
