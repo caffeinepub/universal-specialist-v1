@@ -1,13 +1,95 @@
+import { Actor, HttpAgent } from "@dfinity/agent";
 import { ArrowLeft, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { backendInterface } from "./backend";
 import AuthLock from "./components/AuthLock";
 import Dashboard, { type ContextMode } from "./components/Dashboard";
 import LiveVisionHUD from "./components/LiveVisionHUD";
-import { createActorWithConfig } from "./config";
+import { loadConfig } from "./config";
 import { ActorContext } from "./context/ActorContext";
 import { ALL_SECTORS } from "./data/taxonomy";
+import { idlFactory } from "./declarations/backend.did.js";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
+
+// ─── Host routing constants ───────────────────────────────────────────────────
+// Hardcoded to icp-api.io to prevent routing failures on custom .caffeine.xyz
+// domains where the default HttpAgent host detection breaks.
+const ICP_MAINNET_HOST = "https://icp-api.io";
+const IS_LOCAL =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1");
+
+// ─── buildActor: explicit host + 10 s timeout failsafe ────────────────────────
+// CRITICAL: We bypass createActorWithConfig entirely because it creates its own
+// HttpAgent internally and may use window.location as the host, which fails on
+// custom domains like *.caffeine.xyz. Instead we:
+//   1. Build an HttpAgent with a hardcoded host: "https://icp-api.io"
+//   2. Call Actor.createActor() directly using the platform IDL factory
+// This guarantees the correct ICP boundary node is always used.
+async function buildActor(
+  identity: import("@dfinity/agent").Identity,
+): Promise<backendInterface> {
+  const TIMEOUT_MS = 10_000;
+
+  const initPromise = (async () => {
+    // 1. Read config for canister ID
+    const config = await loadConfig();
+    const canisterId = (config as unknown as Record<string, unknown>)
+      .backend_canister_id as string;
+
+    if (!canisterId || canisterId === "undefined") {
+      throw new Error("Backend canister ID is not set. Check env.json.");
+    }
+
+    // 2. Build HttpAgent with explicit mainnet host.
+    //    Without an explicit `host`, HttpAgent.create() auto-detects from
+    //    window.location — which resolves to the .caffeine.xyz domain, not the
+    //    ICP boundary node, causing a silent hang.
+    const host = IS_LOCAL ? "http://localhost:4943" : ICP_MAINNET_HOST;
+    const agent = await HttpAgent.create({ identity, host });
+
+    // 3. fetchRootKey ONLY on local replica — on mainnet this causes an extra
+    //    network round-trip to an endpoint that doesn't apply, adding latency
+    //    and risk of hang.
+    if (IS_LOCAL) {
+      await agent.fetchRootKey();
+    }
+
+    // 4. Create the actor directly using the IDL factory + our pre-built agent.
+    //    This is the safe path that fully controls the agent and host.
+    const actor = Actor.createActor<backendInterface>(idlFactory, {
+      agent,
+      canisterId,
+    });
+
+    console.info(
+      "[VERASLi] buildActor: canister",
+      canisterId,
+      "| host",
+      host,
+      "| principal",
+      identity.getPrincipal().toString(),
+    );
+    return actor;
+  })();
+
+  // Hard timeout — if the agent hangs for any reason this ensures we always
+  // land on BACKEND: FAILED instead of spinning forever.
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () =>
+        reject(
+          new Error(
+            `Backend init timed out after ${TIMEOUT_MS / 1000}s — check network & canister ID`,
+          ),
+        ),
+      TIMEOUT_MS,
+    ),
+  );
+
+  return Promise.race([initPromise, timeoutPromise]);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -233,14 +315,13 @@ export default function App() {
 
     console.info("[VERASLi] Initializing actor for principal:", principalStr);
 
-    // Explicitly create actor with the authenticated identity.
-    // This ensures the HttpAgent uses the correct cryptographic delegation
-    // rather than the anonymous identity present during initial page load.
+    // Use buildActor which:
+    //  • Forces host: "https://icp-api.io" (fixes custom-domain routing hang)
+    //  • Skips fetchRootKey on mainnet
+    //  • Races against a 10 s timeout so we always fail fast to BACKEND: FAILED
     void (async () => {
       try {
-        const newActor = await createActorWithConfig({
-          agentOptions: { identity },
-        });
+        const newActor = await buildActor(identity);
         setActor(newActor);
         setIsActorReady(true);
         console.info("[VERASLi] Actor ready for principal:", principalStr);

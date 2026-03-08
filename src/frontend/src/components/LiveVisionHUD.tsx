@@ -844,9 +844,22 @@ export default function LiveVisionHUD({
 
       setScanState("identifying");
 
-      // Helper: extract text content from any of the above formats
+      // ── extractGeminiText ────────────────────────────────────────────────────
+      // Fault-tolerant parser for all backend response shapes.
+      //
+      // Strategy (mirrors the Motoko character-walking approach):
+      //   1. Handle plain error prefix strings immediately.
+      //   2. Try JSON.parse for structured payloads (Gemini envelope or errors).
+      //      If JSON.parse fails the body is already plain text.
+      //   3. Inside JSON, walk `candidates[*].content.parts[*].text` collecting
+      //      the first non-empty string.
+      //   4. Fallback: character-walk the raw string looking for the literal
+      //      key sequence `"text"` and extract its quoted value — this catches
+      //      cases where JSON.parse itself might fail on a large body with
+      //      embedded escape sequences.
+      //   5. NEVER throw a generic message; always surface the real error text.
       const extractGeminiText = (raw: string): string => {
-        // Case (c): plain error prefix strings — surface as errors
+        // ── Case A: plain error prefix strings ─────────────────────────────────
         if (
           raw.startsWith("VISION SCAN FAILED:") ||
           raw.startsWith("GEMINI API ERROR:")
@@ -854,54 +867,64 @@ export default function LiveVisionHUD({
           throw new Error(raw);
         }
 
-        // Try JSON parse for cases (a) and (b)
-        let parsed: unknown;
+        // ── Case B: try structured JSON parse ──────────────────────────────────
+        let parsed: unknown = null;
+        let jsonParseOk = false;
         try {
           parsed = JSON.parse(raw);
+          jsonParseOk = true;
         } catch {
-          // Case (d): already plain text
-          return raw;
+          // Not valid JSON — fall through to character-walk below
         }
 
-        if (typeof parsed === "object" && parsed !== null) {
+        if (jsonParseOk && typeof parsed === "object" && parsed !== null) {
           const obj = parsed as Record<string, unknown>;
 
-          // Case (b): JSON-wrapped backend error {"error":"..."}
+          // Case B1: JSON-wrapped backend error {"error":"Vision scan failed: ..."}
           if (typeof obj.error === "string") {
             throw new Error(obj.error as string);
           }
 
-          // Case (a): Gemini generateContent format
-          // candidates[0].content.parts[0].text
-          try {
-            const candidates = obj.candidates as
-              | Array<{
-                  content?: { parts?: Array<{ text?: string }> };
-                }>
-              | undefined;
-            const geminiText = candidates?.[0]?.content?.parts?.[0]?.text;
-            if (
-              typeof geminiText === "string" &&
-              geminiText.trim().length > 0
-            ) {
-              return geminiText;
-            }
-          } catch {
-            // fall through
-          }
-
-          // Gemini error object nested under "error" key (rate limit, auth, etc.)
-          // e.g. {"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}
+          // Case B2: Gemini nested error object
+          // e.g. {"error":{"code":429,"message":"Resource exhausted","status":"..."}}
           if (typeof obj.error === "object" && obj.error !== null) {
             const errObj = obj.error as Record<string, unknown>;
             const msg =
               typeof errObj.message === "string"
-                ? (errObj.message as string)
+                ? errObj.message
                 : JSON.stringify(errObj);
             throw new Error(`GEMINI API ERROR: ${msg}`);
           }
 
-          // Ollama legacy fallbacks
+          // Case B3: Gemini generateContent envelope
+          // candidates[0].content.parts[0..n].text — collect first non-empty
+          try {
+            const candidates = obj.candidates as
+              | Array<{
+                  content?: { parts?: Array<{ text?: string }> };
+                  finishReason?: string;
+                }>
+              | undefined;
+
+            if (Array.isArray(candidates)) {
+              for (const candidate of candidates) {
+                const parts = candidate?.content?.parts;
+                if (!Array.isArray(parts)) continue;
+                for (const part of parts) {
+                  if (
+                    typeof part?.text === "string" &&
+                    part.text.trim().length > 0
+                  ) {
+                    return part.text;
+                  }
+                }
+              }
+            }
+          } catch {
+            // malformed candidates structure — fall through
+          }
+
+          // Case B4: Ollama legacy formats
           const ollamaMsg = (obj as { message?: { content?: string } })?.message
             ?.content;
           const ollamaResp = (obj as { response?: string })?.response;
@@ -909,9 +932,84 @@ export default function LiveVisionHUD({
             return ollamaMsg;
           if (typeof ollamaResp === "string" && ollamaResp.trim().length > 0)
             return ollamaResp;
+
+          // Case B5: JSON parsed but no recognised text field found —
+          // stringify what we have so the user sees something useful
+          return JSON.stringify(obj).slice(0, 500);
         }
 
-        // Final fallback: return raw string as-is
+        // ── Case C: character-walk fallback ────────────────────────────────────
+        // JSON.parse failed (e.g. truncated/malformed body) or body is plain text.
+        // Walk the raw string looking for the literal key `"text"` up to 5 times.
+        const charWalk = (s: string): string | null => {
+          const KEY = '"text"';
+          let searchFrom = 0;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const keyIdx = s.indexOf(KEY, searchFrom);
+            if (keyIdx === -1) break;
+
+            let p = keyIdx + KEY.length;
+
+            // Skip whitespace
+            while (p < s.length && " \n\r\t".includes(s[p])) p++;
+
+            // Expect ':'
+            if (p >= s.length || s[p] !== ":") {
+              searchFrom = keyIdx + 1;
+              continue;
+            }
+            p++;
+
+            // Skip whitespace
+            while (p < s.length && " \n\r\t".includes(s[p])) p++;
+
+            // Expect opening '"'
+            if (p >= s.length || s[p] !== '"') {
+              searchFrom = keyIdx + 1;
+              continue;
+            }
+            p++;
+
+            // Walk the string value honouring escape sequences
+            let value = "";
+            let closed = false;
+            while (p < s.length) {
+              const c = s[p];
+              if (c === '"') {
+                closed = true;
+                p++;
+                break;
+              }
+              if (c === "\\") {
+                p++;
+                if (p >= s.length) break;
+                const esc = s[p];
+                const ESCAPES: Record<string, string> = {
+                  n: "\n",
+                  r: "\r",
+                  t: "\t",
+                  '"': '"',
+                  "\\": "\\",
+                  "/": "/",
+                };
+                value += esc in ESCAPES ? ESCAPES[esc] : esc;
+                p++;
+                continue;
+              }
+              value += c;
+              p++;
+            }
+
+            if (closed && value.trim().length > 0) return value;
+            searchFrom = keyIdx + 1;
+          }
+          return null;
+        };
+
+        const walked = charWalk(raw);
+        if (walked !== null) return walked;
+
+        // ── Case D: truly plain text or unrecognised format ────────────────────
         return raw;
       };
 
@@ -957,13 +1055,19 @@ export default function LiveVisionHUD({
       }
     } catch (err: unknown) {
       setScanState("error");
-      // Surface the exact error from the ICP actor or JS engine — never generic
-      const msg =
-        err instanceof Error
-          ? err.message && err.message !== "Failed to fetch"
+      // Always surface the exact error — never swallow or replace with a generic message.
+      // String(err) covers Error objects, ICP reject strings, and plain values alike.
+      let msg: string;
+      if (err instanceof Error) {
+        // If message is the useless browser "Failed to fetch", include the full
+        // toString() which may contain more context (e.g. TypeError: Failed to fetch)
+        msg =
+          err.message && err.message !== "Failed to fetch"
             ? err.message
-            : String(err)
-          : String(err);
+            : `${err.name}: ${err.message} — ICP canister HTTPS outcall may have failed. Check API key and endpoint in backend.`;
+      } else {
+        msg = String(err);
+      }
       console.error("[VERASLi] Phase 1 visionScan error:", err);
       setScanResult(`PHASE 1 FAILED: ${msg}`);
       return;
