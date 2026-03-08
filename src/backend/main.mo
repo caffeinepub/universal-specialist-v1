@@ -1,9 +1,9 @@
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
 import Text "mo:core/Text";
-import OutCall "http-outcalls/outcall";
-import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
+import Runtime "mo:core/Runtime";
+import OutCall "http-outcalls/outcall";
 
 actor {
   public type KnowledgeDoc = {
@@ -47,9 +47,8 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let OLLAMA_API_KEY : Text = "20e8ce26d8cb4c309ea2c322664dab3d.4GJqlggusiNHT789Xai23dp0";
-  let OLLAMA_CLOUD_ENDPOINT : Text = "https://ollama.com/api/chat";
-  let OLLAMA_VISION_MODEL : Text = "llama3.2-vision";
+  let GEMINI_API_KEY : Text = "AIzaSyBnsAzLDQZyqzhRw4kTYqUKg9O6tNZYgnY";
+  let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" # GEMINI_API_KEY;
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
     OutCall.transform(input);
@@ -73,7 +72,9 @@ actor {
 
   public shared ({ caller }) func deleteKnowledgeDoc(id : Text) : async () {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) { userDocs.remove(id) };
+      case (?userDocs) {
+        userDocs.remove(id);
+      };
       case (null) { Runtime.trap("No knowledge docs found for this user") };
     };
   };
@@ -92,7 +93,9 @@ actor {
 
   public shared ({ caller }) func deleteDataRow(id : Text) : async () {
     switch (dataRows.get(caller)) {
-      case (?userRows) { userRows.remove(id) };
+      case (?userRows) {
+        userRows.remove(id);
+      };
       case (null) { Runtime.trap("No data rows found for this user") };
     };
   };
@@ -115,7 +118,9 @@ actor {
 
   public shared ({ caller }) func deleteScanResult(id : Text) : async () {
     switch (scanResults.get(caller)) {
-      case (?userResults) { userResults.remove(id) };
+      case (?userResults) {
+        userResults.remove(id);
+      };
       case (null) { Runtime.trap("No scan results found for this user") };
     };
   };
@@ -137,12 +142,11 @@ actor {
     ];
   };
 
-  // Private helper function for JSON escaping
   func jsonEscape(input : Text) : Text {
     let iter = input.chars().flatMap(
       func(char) {
         switch (char) {
-          case ('\\') { "\\\\".chars() }; // Unicode for '\\'
+          case ('\\') { "\\\\".chars() };
           case ('\"') { "\\\"".chars() };
           case ('\n') { "\\n".chars() };
           case ('\r') { "\\r".chars() };
@@ -154,17 +158,20 @@ actor {
     Text.fromIter(iter);
   };
 
+  // Canned Gemini response for now keeps responses JSON for frontend
+  func parseGeminiResponse(body : Text) : Text {
+    body;
+  };
+
   public shared ({ caller }) func visionScan(imageBase64 : Text, _prompt : Text, _contextMode : Text) : async Text {
     let safePrompt = jsonEscape(_prompt);
     let safeImage = jsonEscape(imageBase64);
 
-    let jsonBody = "{\"model\":\"" # OLLAMA_VISION_MODEL # "\",\"messages\":[{\"role\":\"user\",\"content\":\"" # safePrompt # "\",\"images\":[\"" # safeImage # "\"]}],\"stream\":false}";
-    let headers : [OutCall.Header] = [
-      { name = "Authorization"; value = "Bearer " # OLLAMA_API_KEY },
-      { name = "Content-Type"; value = "application/json" },
-    ];
+    let jsonBody = "{\"contents\":[{\"parts\":[{\"text\":\"" # safePrompt # "\"},{\"inline_data\":{\"mime_type\":\"image/jpeg\",\"data\":\"" # safeImage # "\"}}]}]}";
+    let headers : [OutCall.Header] = [{ name = "Content-Type"; value = "application/json" }];
     try {
-      await OutCall.httpPostRequest(OLLAMA_CLOUD_ENDPOINT, headers, jsonBody, transform);
+      let rawBody = await OutCall.httpPostRequest(GEMINI_ENDPOINT, headers, jsonBody, transform);
+      parseGeminiResponse(rawBody);
     } catch (e) {
       let safeError = jsonEscape(e.message());
       "{\"error\":\"Vision scan failed: " # safeError # "\"}";
@@ -174,13 +181,22 @@ actor {
   func getSectorKeywords(mode : Text) : Text {
     switch (mode) {
       case ("healthcare") { "clinical protocol medical diagnosis treatment standard" };
+      case ("healthcare-human-services") { "clinical protocol medical diagnosis treatment standard" };
       case ("technology") { "technical specification API documentation engineering" };
+      case ("digital-technology") { "technical specification API documentation engineering" };
       case ("education") { "curriculum learning standard academic compliance" };
       case ("construction") { "OSHA safety code structural specification building standard" };
       case ("mechanics") { "repair manual torque spec OEM diagnostic procedure" };
-      case ("tactical-mechanic") { "repair manual torque specs OEM" };
-      case ("academic-auditor") { "OSHA compliance code safety standard" };
-      case ("environmental-command") { "OSHA EPA hazard protocol" };
+      case ("advanced-manufacturing") { "repair manual torque spec OEM diagnostic procedure" };
+      case ("supply-chain-transportation") { "logistics fleet compliance DOT freight operations" };
+      case ("energy-natural-resources") { "power systems sustainability extraction compliance" };
+      case ("agriculture") { "crop science equipment irrigation food systems" };
+      case ("public-service-safety") { "emergency response NFPA law enforcement civil safety" };
+      case ("marketing-sales") { "brand strategy analytics customer engagement retail" };
+      case ("management-entrepreneurship") { "operations strategy business development KPI" };
+      case ("financial-services") { "accounting investment compliance regulatory finance" };
+      case ("arts-entertainment-design") { "creative production UX media design standards" };
+      case ("hospitality-events-tourism") { "event operations guest experience venue compliance" };
       case (_) { "technical specification reference manual" };
     };
   };

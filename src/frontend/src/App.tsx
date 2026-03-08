@@ -1,340 +1,284 @@
-import { useState } from "react";
+import { ArrowLeft, LogOut } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { backendInterface } from "./backend";
+import AuthLock from "./components/AuthLock";
+import Dashboard, { type ContextMode } from "./components/Dashboard";
 import LiveVisionHUD from "./components/LiveVisionHUD";
-import TacticalMechanicView from "./components/TacticalMechanicView";
+import { createActorWithConfig } from "./config";
+import { ActorContext } from "./context/ActorContext";
+import { ALL_SECTORS } from "./data/taxonomy";
+import { useInternetIdentity } from "./hooks/useInternetIdentity";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ContextMode =
-  | "healthcare"
-  | "technology"
-  | "education"
-  | "construction"
-  | "mechanics";
+type AppState = "locked" | "dashboard" | "sector";
 
-interface TabConfig {
-  id: ContextMode;
-  label: string;
-  displayName: string;
-  shortCode: string;
-  dataOcid: string;
-  /** OKLCH accent — raw L C H values (no wrapper) */
-  accent: string;
+// ─── Sector View (authenticated, sector selected) ─────────────────────────────
+
+interface SectorViewProps {
+  activeTab: ContextMode;
+  setActiveTab: (tab: string) => void;
+  onBackToDashboard: () => void;
+  onSignOut: () => void;
+  principalId: string;
+  actor: backendInterface | null;
+  isActorReady: boolean;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+function SectorView({
+  activeTab,
+  setActiveTab,
+  onBackToDashboard,
+  onSignOut,
+  principalId,
+  actor,
+  isActorReady,
+}: SectorViewProps) {
+  // Look up the active sector from taxonomy for display in the header
+  const activeSector = ALL_SECTORS.find((s) => s.id === activeTab);
 
-const TABS: TabConfig[] = [
-  {
-    id: "healthcare",
-    label: "Healthcare",
-    displayName: "Healthcare",
-    shortCode: "HC-01",
-    dataOcid: "context.tab.1",
-    accent: "0.78 0.15 195",
-  },
-  {
-    id: "technology",
-    label: "Technology",
-    displayName: "Technology",
-    shortCode: "TC-02",
-    dataOcid: "context.tab.2",
-    accent: "0.65 0.18 250",
-  },
-  {
-    id: "education",
-    label: "Education",
-    displayName: "Education",
-    shortCode: "ED-03",
-    dataOcid: "context.tab.3",
-    accent: "0.78 0.16 85",
-  },
-  {
-    id: "construction",
-    label: "Construction",
-    displayName: "Construction",
-    shortCode: "CS-04",
-    dataOcid: "context.tab.4",
-    accent: "0.72 0.18 45",
-  },
-  {
-    id: "mechanics",
-    label: "Mechanics",
-    displayName: "Mechanics",
-    shortCode: "MC-05",
-    dataOcid: "context.tab.5",
-    accent: "0.72 0.18 145",
-  },
-];
+  /** Called by LiveVisionHUD when the model auto-detects a sector */
+  const handleSectorDetected = (sector: string) => {
+    const normalized = sector.toLowerCase().trim();
+    const match = ALL_SECTORS.find((s) => s.id === normalized);
+    if (match) {
+      setActiveTab(match.id);
+    }
+  };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-/** Small monospace badge for system/context prefixes */
-function SysBadge({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium bg-muted text-muted-foreground border border-border select-none whitespace-nowrap">
-      {label}
-    </span>
-  );
-}
-
-function PlaceholderContent({ mode }: { mode: TabConfig }) {
-  const currentYear = new Date().getFullYear();
-  const accentColor = `oklch(${mode.accent})`;
+  // Truncate principal: first 5 + "..." + last 4
+  const truncatedPrincipal =
+    principalId.length > 12
+      ? `${principalId.slice(0, 5)}...${principalId.slice(-4)}`
+      : principalId;
 
   return (
-    <div data-ocid="placeholder.section" className="boot-in px-6 py-10">
-      {/* Status messages */}
-      <div className="space-y-3 text-sm max-w-2xl">
-        <div className="flex items-center gap-2.5">
-          <SysBadge label="[SYS]" />
-          <span className="text-muted-foreground">
-            VERASLi™ v2.0 — Universal Specialist Active
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <SysBadge label="[CTX]" />
-          <span className="text-muted-foreground">
-            Sector Module Load → {mode.shortCode}
-          </span>
-        </div>
-
-        <div className="mt-6 flex items-start gap-2.5">
-          <span className="font-semibold mt-0.5" style={{ color: accentColor }}>
-            ›
-          </span>
-          <span className="text-foreground font-semibold">
-            Sector: {mode.displayName} Initialized.
-          </span>
-        </div>
-
-        <div className="flex items-start gap-2.5">
-          <span className="text-status-warning font-semibold mt-0.5">›</span>
-          <span className="text-status-warning font-medium">
-            Awaiting Knowledge Drop...
-          </span>
-        </div>
-
-        <div className="mt-4 flex items-center gap-2.5">
-          <SysBadge label="[RDY]" />
-          <span className="text-muted-foreground text-xs">
-            System Ready — Drag &amp; drop knowledge files or open data grid
-          </span>
-        </div>
-      </div>
-
-      {/* Status metric cards */}
-      <div className="mt-10 grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-2xl">
-        <StatusCell
-          label="Sector"
-          value={mode.shortCode}
-          color="ok"
-          accent={mode.accent}
-        />
-        <StatusCell label="Knowledge Sink" value="Empty" color="warning" />
-        <StatusCell label="Data Grid" value="Standby" color="offline" />
-        <StatusCell label="Logic Feed" value="Offline" color="offline" />
-        <StatusCell label="Telemetry" value="Simulated" color="warning" />
-        <StatusCell label="Ollama API" value="Not Linked" color="offline" />
-      </div>
-
-      {/* Footer attribution */}
-      <footer className="mt-16 pt-4 border-t border-border text-muted-foreground text-xs">
-        © {currentYear}.{" "}
-        <a
-          href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-foreground transition-colors duration-150 underline underline-offset-2"
+    <ActorContext.Provider value={{ actor, isActorReady }}>
+      <div className="min-h-screen bg-background font-sans flex flex-col">
+        {/* ── Header ─────────────────────────────────────────────────── */}
+        <header
+          data-ocid="header.section"
+          className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-border h-14 flex items-center px-3 sm:px-5 gap-2"
+          style={{
+            boxShadow:
+              "0 1px 0 oklch(var(--border)), 0 2px 16px oklch(0 0 0 / 0.4)",
+          }}
         >
-          Built with ♥ using caffeine.ai
-        </a>
-      </footer>
-    </div>
-  );
-}
+          {/* Back to dashboard */}
+          <button
+            type="button"
+            data-ocid="header.back_to_dashboard_button"
+            onClick={onBackToDashboard}
+            title="Back to Command Center"
+            className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 transition-all duration-150 text-muted-foreground hover:text-foreground text-xs font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Dashboard</span>
+          </button>
 
-interface StatusCellProps {
-  label: string;
-  value: string;
-  color: "ok" | "warning" | "offline";
-  /** Optional OKLCH raw values for accent color override (L C H) */
-  accent?: string;
-}
+          {/* Center: icon + title + active sector */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <img
+              src="/assets/generated/verasli-neural-v-icon-transparent.dim_64x64.png"
+              alt="VERASLi Neural V"
+              width={28}
+              height={28}
+              className="flex-shrink-0 opacity-90"
+              style={{ imageRendering: "crisp-edges" }}
+            />
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span
+                className="text-foreground font-bold text-[18px] tracking-tight leading-none truncate"
+                aria-label="VERASLi"
+                style={{ fontFamily: "'Sora', sans-serif" }}
+              >
+                VERASLi™
+              </span>
+              {activeSector && (
+                <span
+                  className="hidden sm:inline text-[11px] font-medium leading-none whitespace-nowrap font-data truncate"
+                  style={{ color: `oklch(${activeSector.accent})` }}
+                >
+                  {activeSector.name}
+                </span>
+              )}
+            </div>
+          </div>
 
-function StatusCell({ label, value, color, accent }: StatusCellProps) {
-  const dotClass =
-    color === "ok"
-      ? "status-dot-ok"
-      : color === "warning"
-        ? "status-dot-warning"
-        : "status-dot-offline";
+          {/* Right: actor status + auth status + principal + sign out */}
+          <div className="flex-shrink-0 flex items-center gap-2">
+            {/* Actor connection status indicator */}
+            <span
+              className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border font-data"
+              style={
+                isActorReady
+                  ? {
+                      background: "oklch(0.55 0.18 145 / 0.12)",
+                      color: "oklch(0.72 0.2 145)",
+                      borderColor: "oklch(0.55 0.18 145 / 0.3)",
+                    }
+                  : {
+                      background: "oklch(0.6 0.15 55 / 0.12)",
+                      color: "oklch(0.75 0.18 55)",
+                      borderColor: "oklch(0.6 0.15 55 / 0.3)",
+                    }
+              }
+            >
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: isActorReady
+                    ? "oklch(0.72 0.2 145)"
+                    : "oklch(0.75 0.18 55)",
+                  animation: isActorReady ? "none" : "pulse 1.5s infinite",
+                }}
+              />
+              {isActorReady ? "BACKEND: READY" : "CONNECTING..."}
+            </span>
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 font-data">
+              AUTHENTICATED
+            </span>
+            <span className="hidden md:inline text-muted-foreground text-[10px] font-data whitespace-nowrap">
+              {truncatedPrincipal}
+            </span>
+            <button
+              type="button"
+              data-ocid="header.sign_out_button"
+              onClick={onSignOut}
+              title="Sign out"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive transition-all duration-150 text-muted-foreground text-xs font-medium outline-none focus-visible:ring-1 focus-visible:ring-destructive/50"
+            >
+              <LogOut className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
+          </div>
+        </header>
 
-  const valueClass =
-    color === "ok"
-      ? accent
-        ? ""
-        : "text-status-ok"
-      : color === "warning"
-        ? "text-status-warning"
-        : "text-muted-foreground";
-
-  const valueStyle =
-    color === "ok" && accent ? { color: `oklch(${accent})` } : undefined;
-
-  return (
-    <div className="border border-border bg-card card-shadow-sm rounded-lg p-3.5">
-      <div className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide mb-2">
-        {label}
-      </div>
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`}
-          style={
-            color === "ok" && accent
-              ? { background: `oklch(${accent})` }
-              : undefined
-          }
-        />
-        <span
-          className={`font-data font-semibold text-xs ${valueClass}`}
-          style={valueStyle}
+        {/* ── Main Content (no tab nav, directly renders HUD) ──────── */}
+        <main
+          data-ocid="main.panel"
+          className="flex-1 pt-14 overflow-auto"
+          aria-label={`${activeSector?.name ?? activeTab} sector`}
         >
-          {value}
-        </span>
+          <LiveVisionHUD
+            key={activeTab}
+            contextMode={activeTab}
+            onSectorDetected={handleSectorDetected}
+          />
+        </main>
       </div>
-    </div>
+    </ActorContext.Provider>
   );
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ContextMode>("healthcare");
+  const { identity, isInitializing, clear } = useInternetIdentity();
 
-  const activeMode = TABS.find((t) => t.id === activeTab)!;
+  const [appState, setAppState] = useState<AppState>("locked");
+  const [activeSector, setActiveSector] = useState<ContextMode>("");
 
-  /** Called by LiveVisionHUD when the model auto-detects a sector */
-  const handleSectorDetected = (sector: string) => {
-    const normalized = sector.toLowerCase().trim();
-    const match = TABS.find((t) => t.id === normalized);
-    if (match) {
-      setActiveTab(match.id);
+  // ── Actor state: initialized at App level, bound to auth identity ──────────
+  const [actor, setActor] = useState<backendInterface | null>(null);
+  const [isActorReady, setIsActorReady] = useState(false);
+  const actorInitRef = useRef(false);
+
+  // Initialize actor whenever identity changes (including after login)
+  useEffect(() => {
+    if (isInitializing) return;
+
+    // Reset actor when identity is gone (sign out)
+    if (!identity || identity.getPrincipal().isAnonymous()) {
+      setActor(null);
+      setIsActorReady(false);
+      actorInitRef.current = false;
+      return;
     }
+
+    // Avoid duplicate initialization for the same identity
+    const principalStr = identity.getPrincipal().toString();
+    if (actorInitRef.current) return;
+    actorInitRef.current = true;
+
+    // Create a properly authenticated actor bound to this identity
+    void (async () => {
+      try {
+        const newActor = await createActorWithConfig({
+          agentOptions: { identity },
+        });
+        setActor(newActor);
+        setIsActorReady(true);
+        console.info(
+          "[VERASLi] Actor initialized for principal:",
+          principalStr,
+        );
+      } catch (err) {
+        console.error("[VERASLi] Actor initialization failed:", err);
+        setIsActorReady(false);
+        actorInitRef.current = false; // allow retry
+      }
+    })();
+  }, [identity, isInitializing]);
+
+  // ── Auth state machine ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isInitializing) return; // Wait for auth client to finish loading
+    if (identity && !identity.getPrincipal().isAnonymous()) {
+      // Authenticated — move to dashboard only if currently on the lock screen
+      setAppState((prev) => (prev === "locked" ? "dashboard" : prev));
+    } else {
+      // Not authenticated — always return to lock screen
+      setAppState("locked");
+    }
+  }, [identity, isInitializing]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  const handleSectorSelect = (sector: string) => {
+    setActiveSector(sector);
+    setAppState("sector");
   };
 
+  const handleSignOut = () => {
+    clear();
+    setAppState("locked");
+    setActiveSector("");
+    // Reset actor on sign out
+    setActor(null);
+    setIsActorReady(false);
+    actorInitRef.current = false;
+  };
+
+  const handleBackToDashboard = () => {
+    setAppState("dashboard");
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (appState === "locked") {
+    return <AuthLock />;
+  }
+
+  if (appState === "dashboard") {
+    return (
+      <Dashboard
+        onSectorSelect={handleSectorSelect}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
+
+  // appState === "sector"
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col">
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <header
-        data-ocid="header.section"
-        className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-border h-14 flex items-center px-4 sm:px-6"
-        style={{
-          boxShadow:
-            "0 1px 0 oklch(var(--border)), 0 2px 16px oklch(0 0 0 / 0.4)",
-        }}
-      >
-        {/* Left: icon + title */}
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <img
-            src="/assets/generated/verasli-neural-v-icon-transparent.dim_64x64.png"
-            alt="VERASLi Neural V"
-            width={32}
-            height={32}
-            className="flex-shrink-0 opacity-90"
-            style={{ imageRendering: "crisp-edges" }}
-          />
-          <div className="flex items-baseline gap-2.5 min-w-0">
-            <span
-              className="text-foreground font-bold text-[20px] tracking-tight leading-none truncate"
-              aria-label="VERASLi"
-              style={{ fontFamily: "'Sora', sans-serif" }}
-            >
-              VERASLi™
-            </span>
-            <span className="hidden sm:inline text-muted-foreground text-[11px] font-medium leading-none whitespace-nowrap">
-              Universal Specialist
-            </span>
-          </div>
-        </div>
-
-        {/* Right: version tag */}
-        <div className="flex-shrink-0 flex items-center gap-2">
-          <span className="text-muted-foreground text-[11px] font-data whitespace-nowrap">
-            v2.0
-          </span>
-          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20">
-            Sector Routing Active
-          </span>
-        </div>
-      </header>
-
-      {/* ── Context Switcher Tab Bar ────────────────────────────────── */}
-      <nav
-        className="fixed top-14 left-0 right-0 z-40 bg-surface border-b border-border"
-        aria-label="Sector switcher"
-      >
-        <div className="flex items-stretch overflow-x-auto scrollbar-none">
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const accentColor = `oklch(${tab.accent})`;
-            return (
-              <button
-                type="button"
-                key={tab.id}
-                data-ocid={tab.dataOcid}
-                onClick={() => setActiveTab(tab.id)}
-                className={[
-                  "relative flex-1 min-w-fit px-4 sm:px-6 py-3 text-sm font-medium whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-1 focus-visible:ring-primary/50",
-                  isActive ? "" : "text-muted-foreground hover:text-foreground",
-                ].join(" ")}
-                style={isActive ? { color: accentColor } : undefined}
-                aria-selected={isActive}
-                role="tab"
-              >
-                {/* Short code prefix */}
-                <span
-                  className="mr-1.5 text-[10px] font-data opacity-60"
-                  aria-hidden="true"
-                >
-                  {tab.shortCode}
-                </span>
-                {tab.label}
-                {/* Active indicator bar with sector accent */}
-                {isActive && (
-                  <span
-                    className="absolute bottom-0 left-0 right-0 h-0.5"
-                    style={{
-                      background: accentColor,
-                      animation: "tab-activate 0.2s ease-out forwards",
-                    }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      {/* ── Main Content ────────────────────────────────────────────── */}
-      <main
-        data-ocid="main.panel"
-        className="flex-1 pt-28 overflow-auto"
-        role="tabpanel"
-        aria-label={`${activeMode.displayName} sector`}
-      >
-        {activeTab === "mechanics" ? (
-          <TacticalMechanicView key="mechanics" />
-        ) : activeTab === "construction" ? (
-          <LiveVisionHUD
-            key="construction"
-            contextMode="construction"
-            onSectorDetected={handleSectorDetected}
-          />
-        ) : (
-          <PlaceholderContent key={activeTab} mode={activeMode} />
-        )}
-      </main>
-    </div>
+    <SectorView
+      activeTab={activeSector}
+      setActiveTab={setActiveSector}
+      onBackToDashboard={handleBackToDashboard}
+      onSignOut={handleSignOut}
+      principalId={identity?.getPrincipal().toString() ?? ""}
+      actor={actor}
+      isActorReady={isActorReady}
+    />
   );
 }

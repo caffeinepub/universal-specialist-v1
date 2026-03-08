@@ -13,7 +13,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScanResult, SearchResult } from "../backend";
-import { useActor } from "../hooks/useActor";
+import { useActorContext } from "../context/ActorContext";
+import {
+  ALL_SECTOR_IDS,
+  getSectorAccent,
+  getSectorLabel,
+} from "../data/taxonomy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,53 +37,36 @@ export interface LiveVisionHUDProps {
   onSectorDetected?: (sector: string) => void;
 }
 
-// ─── Sector Accent Colors ─────────────────────────────────────────────────────
-
-const SECTOR_ACCENTS: Record<string, string> = {
-  healthcare: "0.78 0.15 195",
-  technology: "0.65 0.18 250",
-  education: "0.78 0.16 85",
-  construction: "0.72 0.18 45",
-  mechanics: "0.72 0.18 145",
-};
-
-const SECTOR_LABELS: Record<string, string> = {
-  healthcare: "HEALTHCARE",
-  technology: "TECHNOLOGY",
-  education: "EDUCATION",
-  construction: "CONSTRUCTION",
-  mechanics: "MECHANICS",
-};
-
-function getSectorAccent(mode: string): string {
-  return SECTOR_ACCENTS[mode] ?? SECTOR_ACCENTS.construction;
-}
-
-function getSectorLabel(mode: string): string {
-  return SECTOR_LABELS[mode] ?? mode.toUpperCase();
-}
-
 // ─── Context Prompts ──────────────────────────────────────────────────────────
 
 /**
  * Returns a prompt that instructs the model to respond ONLY with a JSON object:
- * { "detected_mode": "<one of 5 sectors>", "image_description": "..." }
+ * { "detected_mode": "<sector-id>", "image_description": "..." }
  */
 function getIdentificationPrompt(): string {
   return `You are an autonomous sector identification specialist. Analyze the image and determine which enterprise sector it belongs to.
 
 Return ONLY a valid JSON object with exactly these two fields:
 {
-  "detected_mode": "<sector>",
+  "detected_mode": "<sector-id>",
   "image_description": "<detailed description>"
 }
 
-The "detected_mode" field MUST be one of these exact values:
-- "healthcare" — if you see: medical equipment, hospital settings, clinical tools, patients, doctors, nurses, medicine, lab instruments, anatomical charts, surgical tools
-- "technology" — if you see: computers, servers, electronic components, code, circuit boards, data centers, software interfaces, network hardware, monitors, tech devices
-- "education" — if you see: classrooms, textbooks, whiteboards, blackboards, academic materials, students, teachers, desks, books, learning tools, educational signage
-- "construction" — if you see: building sites, scaffolding, construction tools, PPE, hard hats, safety vests, concrete, steel beams, blueprints, cranes, power tools
-- "mechanics" — if you see: vehicles, engines, automotive parts, garages, car lifts, wrenches, diagnostic tools, exhaust systems, tires, transmissions
+The "detected_mode" field MUST be one of these exact sector IDs:
+- "construction" — building sites, scaffolding, PPE, hard hats, safety vests, concrete, steel beams, blueprints, cranes, power tools
+- "advanced-manufacturing" — CNC machines, robots, assembly lines, precision equipment, industrial machinery, factory floors
+- "supply-chain-transportation" — trucks, warehouses, logistics, freight, shipping containers, fleet vehicles, cargo
+- "energy-natural-resources" — power plants, solar panels, oil rigs, wind turbines, pipelines, mining equipment, extraction
+- "agriculture" — crops, fields, tractors, irrigation, livestock, greenhouses, farm equipment, soil analysis
+- "public-service-safety" — police, fire stations, emergency responders, government buildings, law enforcement, civil services
+- "healthcare-human-services" — medical equipment, hospitals, clinical tools, patients, doctors, nurses, lab instruments
+- "education" — classrooms, textbooks, whiteboards, students, teachers, academic materials, learning environments
+- "marketing-sales" — retail displays, product promotions, advertising, customer-facing environments, brand signage
+- "digital-technology" — computers, servers, circuit boards, code, data centers, network hardware, tech devices
+- "management-entrepreneurship" — office environments, business meetings, corporate settings, strategy boards
+- "financial-services" — banks, financial terminals, trading floors, accounting materials, investment documents
+- "arts-entertainment-design" — studios, creative workspaces, art galleries, performance venues, design tools, media production
+- "hospitality-events-tourism" — hotels, restaurants, event venues, tourism sites, guest service areas
 
 The "image_description" field should be a detailed technical breakdown of what you observe.
 
@@ -87,18 +75,36 @@ Respond with ONLY the JSON object. No explanation, no preamble, no markdown.`;
 
 function getContextSuffix(contextMode: string): string {
   switch (contextMode) {
-    case "healthcare":
-      return "clinical protocol medical diagnosis treatment";
-    case "technology":
-      return "technical documentation API specification";
-    case "education":
-      return "curriculum academic standard compliance";
     case "construction":
-      return "OSHA safety code building specification";
-    case "mechanics":
-      return "repair manual torque spec OEM diagnostic";
+      return "OSHA safety code building specification structural";
+    case "advanced-manufacturing":
+      return "CNC machining robotics precision engineering spec";
+    case "supply-chain-transportation":
+      return "logistics fleet compliance DOT freight operations";
+    case "energy-natural-resources":
+      return "power systems sustainability extraction compliance";
+    case "agriculture":
+      return "crop science equipment irrigation food systems";
+    case "public-service-safety":
+      return "emergency response NFPA law enforcement civil safety";
+    case "healthcare-human-services":
+      return "clinical protocol medical diagnosis treatment compliance";
+    case "education":
+      return "curriculum academic standard compliance assessment";
+    case "marketing-sales":
+      return "brand strategy analytics customer engagement retail";
+    case "digital-technology":
+      return "technical documentation API specification engineering";
+    case "management-entrepreneurship":
+      return "operations strategy business development KPI";
+    case "financial-services":
+      return "accounting investment compliance regulatory finance";
+    case "arts-entertainment-design":
+      return "creative production UX media design standards";
+    case "hospitality-events-tourism":
+      return "event operations guest experience venue compliance";
     default:
-      return "technical specifications manual";
+      return "technical specifications manual compliance";
   }
 }
 
@@ -359,7 +365,7 @@ function PhaseStatusLabel({
         style={{ color }}
       >
         <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-        <span>PHASE 1 — VISION SCAN: Routing via ICP backend proxy...</span>
+        <span>PHASE 1 — VISION SCAN: Identifying via Google Gemini...</span>
       </div>
     );
   }
@@ -515,16 +521,13 @@ function HistoryItem({ result, index, onDelete }: HistoryItemProps) {
   }
 
   const isLong = findingsText.length > 200;
-  const sectorLabel =
-    SECTOR_LABELS[result.contextMode] ?? result.contextMode.toUpperCase();
-  const sectorAccent = SECTOR_ACCENTS[result.contextMode];
-  const badgeStyle = sectorAccent
-    ? {
-        background: `oklch(${sectorAccent} / 0.12)`,
-        color: `oklch(${sectorAccent})`,
-        borderColor: `oklch(${sectorAccent} / 0.3)`,
-      }
-    : undefined;
+  const sectorLabel = getSectorLabel(result.contextMode);
+  const sectorAccentRaw = getSectorAccent(result.contextMode);
+  const badgeStyle = {
+    background: `oklch(${sectorAccentRaw} / 0.12)`,
+    color: `oklch(${sectorAccentRaw})`,
+    borderColor: `oklch(${sectorAccentRaw} / 0.3)`,
+  };
 
   return (
     <div
@@ -537,15 +540,9 @@ function HistoryItem({ result, index, onDelete }: HistoryItemProps) {
           <div className="flex items-center gap-2 mb-1.5">
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-data font-medium border select-none"
-              style={
-                badgeStyle ?? {
-                  background: "oklch(var(--primary) / 0.1)",
-                  color: "oklch(var(--primary))",
-                  borderColor: "oklch(var(--primary) / 0.2)",
-                }
-              }
+              style={badgeStyle}
             >
-              {sectorAccent ? `[${sectorLabel}]` : "[AGT]"}
+              [{sectorLabel}]
             </span>
             {isAgenticResult && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-data bg-muted/50 text-muted-foreground border border-border select-none">
@@ -619,7 +616,8 @@ export default function LiveVisionHUD({
   contextMode,
   onSectorDetected,
 }: LiveVisionHUDProps) {
-  const { actor, isFetching } = useActor();
+  // Consume actor from the global ActorContext (initialized at App level, bound to auth)
+  const { actor, isActorReady } = useActorContext();
 
   // Camera state
   const [cameraState, setCameraState] = useState<CameraState>("idle");
@@ -740,10 +738,10 @@ export default function LiveVisionHUD({
   }, [actor, contextMode, detectedSector]);
 
   useEffect(() => {
-    if (actor && !isFetching) {
+    if (actor && isActorReady) {
       void loadHistory();
     }
-  }, [actor, isFetching, loadHistory]);
+  }, [actor, isActorReady, loadHistory]);
 
   // Cleanup sector lock timer on unmount
   useEffect(() => {
@@ -837,57 +835,107 @@ export default function LiveVisionHUD({
         contextMode,
       );
 
-      // Check if backend returned an error JSON
-      if (rawResponse.includes('"error"')) {
-        let errorDetail = rawResponse;
-        try {
-          const parsed = JSON.parse(rawResponse) as { error?: string };
-          if (parsed.error) errorDetail = parsed.error;
-        } catch {
-          // keep raw string
-        }
-        throw new Error(errorDetail);
-      }
+      // ── Parse Gemini response ────────────────────────────────────────────────────
+      // The backend returns either:
+      //   (a) Raw Gemini JSON: {"candidates":[{"content":{"parts":[{"text":"..."}]}},...]}
+      //   (b) JSON-wrapped error from backend catch: {"error":"Vision scan failed: ..."}
+      //   (c) Plain error prefix: "VISION SCAN FAILED: ..." or "GEMINI API ERROR: ..."
+      //   (d) Already-extracted plain text (future: when backend parser is active)
 
-      // Try to parse JSON response for sector auto-detection
       setScanState("identifying");
-      try {
-        // Parse the /api/chat response envelope: { message: { content: "..." } }
-        let contentStr = rawResponse;
-        try {
-          const envelope = JSON.parse(rawResponse) as {
-            message?: { content?: string };
-            response?: string;
-          };
-          contentStr =
-            envelope.message?.content ?? envelope.response ?? rawResponse;
-        } catch {
-          // rawResponse may already be the content string
+
+      // Helper: extract text content from any of the above formats
+      const extractGeminiText = (raw: string): string => {
+        // Case (c): plain error prefix strings — surface as errors
+        if (
+          raw.startsWith("VISION SCAN FAILED:") ||
+          raw.startsWith("GEMINI API ERROR:")
+        ) {
+          throw new Error(raw);
         }
 
-        const cleaned = contentStr
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```\s*$/, "")
-          .trim();
-        const parsed = JSON.parse(cleaned) as {
+        // Try JSON parse for cases (a) and (b)
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // Case (d): already plain text
+          return raw;
+        }
+
+        if (typeof parsed === "object" && parsed !== null) {
+          const obj = parsed as Record<string, unknown>;
+
+          // Case (b): JSON-wrapped backend error {"error":"..."}
+          if (typeof obj.error === "string") {
+            throw new Error(obj.error as string);
+          }
+
+          // Case (a): Gemini generateContent format
+          // candidates[0].content.parts[0].text
+          try {
+            const candidates = obj.candidates as
+              | Array<{
+                  content?: { parts?: Array<{ text?: string }> };
+                }>
+              | undefined;
+            const geminiText = candidates?.[0]?.content?.parts?.[0]?.text;
+            if (
+              typeof geminiText === "string" &&
+              geminiText.trim().length > 0
+            ) {
+              return geminiText;
+            }
+          } catch {
+            // fall through
+          }
+
+          // Gemini error object nested under "error" key (rate limit, auth, etc.)
+          // e.g. {"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}
+          if (typeof obj.error === "object" && obj.error !== null) {
+            const errObj = obj.error as Record<string, unknown>;
+            const msg =
+              typeof errObj.message === "string"
+                ? (errObj.message as string)
+                : JSON.stringify(errObj);
+            throw new Error(`GEMINI API ERROR: ${msg}`);
+          }
+
+          // Ollama legacy fallbacks
+          const ollamaMsg = (obj as { message?: { content?: string } })?.message
+            ?.content;
+          const ollamaResp = (obj as { response?: string })?.response;
+          if (typeof ollamaMsg === "string" && ollamaMsg.trim().length > 0)
+            return ollamaMsg;
+          if (typeof ollamaResp === "string" && ollamaResp.trim().length > 0)
+            return ollamaResp;
+        }
+
+        // Final fallback: return raw string as-is
+        return raw;
+      };
+
+      const contentStr = extractGeminiText(rawResponse);
+
+      // Strip markdown code fences if model wrapped JSON in them
+      const cleaned = contentStr
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```\s*$/, "")
+        .trim();
+
+      // Try to parse sector JSON from the content
+      try {
+        const sectorJson = JSON.parse(cleaned) as {
           detected_mode?: string;
           image_description?: string;
         };
 
-        const validModes = [
-          "healthcare",
-          "technology",
-          "education",
-          "construction",
-          "mechanics",
-        ];
-
         if (
-          parsed.detected_mode &&
-          validModes.includes(parsed.detected_mode.toLowerCase())
+          sectorJson.detected_mode &&
+          ALL_SECTOR_IDS.includes(sectorJson.detected_mode.toLowerCase())
         ) {
-          resolvedMode = parsed.detected_mode.toLowerCase();
-          imageDescription = parsed.image_description ?? contentStr;
+          resolvedMode = sectorJson.detected_mode.toLowerCase();
+          imageDescription = sectorJson.image_description ?? cleaned;
 
           setDetectedSector(resolvedMode);
           setSectorLocked(true);
@@ -901,11 +949,11 @@ export default function LiveVisionHUD({
 
           await new Promise<void>((resolve) => setTimeout(resolve, 2000));
         } else {
-          imageDescription = parsed.image_description ?? contentStr;
+          imageDescription = sectorJson.image_description ?? cleaned;
         }
       } catch {
-        // rawResponse is plain text — use it directly
-        imageDescription = rawResponse || "No response from model.";
+        // Content is plain text, not sector JSON — use directly
+        imageDescription = cleaned || "No response from model.";
       }
     } catch (err: unknown) {
       setScanState("error");
@@ -1121,20 +1169,10 @@ export default function LiveVisionHUD({
               borderColor: accentColor.replace(")", " / 0.2)"),
             }}
           >
-            [{getSectorLabel(contextMode).slice(0, 2)}-
-            {contextMode === "healthcare"
-              ? "01"
-              : contextMode === "technology"
-                ? "02"
-                : contextMode === "education"
-                  ? "03"
-                  : contextMode === "construction"
-                    ? "04"
-                    : "05"}
-            ]
+            [{getSectorLabel(contextMode)}]
           </span>
           <span className="text-muted-foreground text-xs font-data">
-            Ollama Cloud Vision API :: Backend Proxy
+            Google Gemini Vision API :: Backend Proxy
           </span>
         </div>
         <div className="flex items-center gap-2 mb-8">
@@ -1519,16 +1557,18 @@ export default function LiveVisionHUD({
                 className="text-status-warning text-xs font-data"
               >
                 {scanResult ||
-                  "SCAN FAILED — Check Ollama endpoint in settings"}
+                  "SCAN FAILED — Check Gemini API key in backend settings"}
               </p>
             )}
 
             {/* Idle */}
             {scanState === "idle" && (
               <p className="text-white/30 text-xs font-data italic">
-                {webSearchEnabled
-                  ? "No analysis yet — tap INITIALIZE SCAN to begin agentic web search."
-                  : "No analysis yet — tap INITIALIZE SCAN to begin (vision-only mode)."}
+                {!isActorReady || !actor
+                  ? "Establishing connection to backend canister..."
+                  : webSearchEnabled
+                    ? "No analysis yet — tap INITIALIZE SCAN to begin agentic web search."
+                    : "No analysis yet — tap INITIALIZE SCAN to begin (vision-only mode)."}
               </p>
             )}
           </div>
@@ -1542,37 +1582,49 @@ export default function LiveVisionHUD({
               type="button"
               data-ocid="hud.scan_button"
               onClick={() => void captureAndScan()}
-              disabled={isScanning}
+              disabled={isScanning || !isActorReady || !actor}
               className="flex items-center gap-2 px-4 py-2 rounded text-[11px] font-data font-semibold tracking-widest uppercase transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 position: "relative",
                 zIndex: 9999,
-                cursor: isScanning ? "not-allowed" : "pointer",
+                cursor:
+                  isScanning || !isActorReady || !actor
+                    ? "not-allowed"
+                    : "pointer",
                 pointerEvents: "auto",
-                background: isScanning
-                  ? accentColor.replace(")", " / 0.25)")
-                  : accentColor.replace(")", " / 0.9)"),
+                background:
+                  isScanning || !isActorReady || !actor
+                    ? accentColor.replace(")", " / 0.25)")
+                    : accentColor.replace(")", " / 0.9)"),
                 color: "oklch(0.08 0 0)",
                 boxShadow: `0 2px 12px ${accentColor.replace(")", " / 0.3)")}`,
                 border: `1px solid ${accentColor.replace(")", " / 0.4)")}`,
               }}
             >
-              {isScanning ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {!isActorReady || !actor ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  CONNECTING TO BACKEND...
+                </>
+              ) : isScanning ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  {scanState === "detecting"
+                    ? "DETECTING..."
+                    : scanState === "identifying"
+                      ? "IDENTIFYING..."
+                      : scanState === "searching"
+                        ? "SEARCHING..."
+                        : "SYNTHESIZING..."}
+                </>
               ) : (
-                <ScanLine className="w-3.5 h-3.5" />
+                <>
+                  <ScanLine className="w-3.5 h-3.5" />
+                  {webSearchEnabled
+                    ? "INITIALIZE SCAN + SEARCH"
+                    : "INITIALIZE SCAN"}
+                </>
               )}
-              {isScanning
-                ? scanState === "detecting"
-                  ? "DETECTING..."
-                  : scanState === "identifying"
-                    ? "IDENTIFYING..."
-                    : scanState === "searching"
-                      ? "SEARCHING..."
-                      : "SYNTHESIZING..."
-                : webSearchEnabled
-                  ? "INITIALIZE SCAN + SEARCH"
-                  : "INITIALIZE SCAN"}
             </button>
 
             {/* Torch / Flash toggle */}
