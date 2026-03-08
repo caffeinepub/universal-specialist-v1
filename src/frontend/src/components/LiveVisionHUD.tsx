@@ -628,6 +628,9 @@ export default function LiveVisionHUD({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sources, setSources] = useState<ParsedResult[]>([]);
   const [autoPulse, setAutoPulse] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomCaps, setZoomCaps] = useState({ min: 1, max: 1, step: 0.1 });
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(() => {
     const stored = localStorage.getItem("verasli_web_search");
     return stored !== null ? stored === "true" : true;
@@ -658,6 +661,56 @@ export default function LiveVisionHUD({
   const handleWebSearchToggle = (value: boolean) => {
     setWebSearchEnabled(value);
     localStorage.setItem("verasli_web_search", value.toString());
+  };
+
+  // ── Torch / Flash control ────────────────────────────────────────────────────
+
+  const toggleTorch = async () => {
+    try {
+      const stream = videoRef.current?.srcObject as MediaStream | null;
+      if (!stream) {
+        alert("Camera must be active to control flash.");
+        return;
+      }
+      const track = stream.getVideoTracks()[0];
+      if (!track) return;
+      // Check torch capability (torch is not in the standard TS typings)
+      const capabilities = track.getCapabilities() as MediaTrackCapabilities & {
+        torch?: boolean;
+      };
+      if (!capabilities.torch) {
+        alert("Flash not supported on this browser.");
+        return;
+      }
+      const newState = !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: newState } as MediaTrackConstraintSet],
+      });
+      setIsTorchOn(newState);
+    } catch {
+      alert("Flash not supported on this browser.");
+    }
+  };
+
+  // ── Zoom control ─────────────────────────────────────────────────────────────
+
+  const handleZoom = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    setZoomLevel(val);
+    if (videoRef.current?.srcObject) {
+      const track = (
+        videoRef.current.srcObject as MediaStream
+      ).getVideoTracks()[0];
+      if (track) {
+        try {
+          await track.applyConstraints({
+            advanced: [{ zoom: val } as MediaTrackConstraintSet],
+          });
+        } catch {
+          // Zoom constraint not supported — silently ignore
+        }
+      }
+    }
   };
 
   // ── Load history ────────────────────────────────────────────────────────────
@@ -718,6 +771,24 @@ export default function LiveVisionHUD({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+
+      // Check hardware capabilities (torch + zoom)
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const caps = track.getCapabilities() as MediaTrackCapabilities & {
+          torch?: boolean;
+          zoom?: { min: number; max: number; step: number };
+        };
+        if (caps.zoom) {
+          setZoomCaps({
+            min: caps.zoom.min,
+            max: caps.zoom.max,
+            step: caps.zoom.step,
+          });
+          setZoomLevel(caps.zoom.min);
+        }
+      }
+
       setCameraState("granted");
     } catch {
       setCameraState("denied");
@@ -1360,6 +1431,59 @@ export default function LiveVisionHUD({
           </div>
         </div>
 
+        {/* ── Zoom slider (right side, hardware zoom only) ───────── */}
+        {zoomCaps.max > 1 && (
+          <div
+            className="absolute right-3 flex flex-col items-center gap-1.5"
+            style={{
+              top: "50%",
+              transform: "translateY(-50%)",
+              zIndex: 9998,
+              pointerEvents: "auto",
+            }}
+            aria-label="Hardware zoom control"
+          >
+            <span
+              className="text-[9px] font-data font-semibold tracking-widest uppercase select-none"
+              style={{
+                color: accentColor,
+                writingMode: "vertical-rl",
+                transform: "rotate(180deg)",
+              }}
+            >
+              ZOOM
+            </span>
+            <input
+              type="range"
+              data-ocid="hud.zoom_slider"
+              min={zoomCaps.min}
+              max={zoomCaps.max}
+              step={zoomCaps.step}
+              value={zoomLevel}
+              onChange={(e) => void handleZoom(e)}
+              aria-label={`Zoom level: ${zoomLevel.toFixed(1)}x`}
+              className="appearance-none cursor-pointer"
+              style={{
+                writingMode: "vertical-lr",
+                direction: "rtl",
+                width: "28px",
+                height: "120px",
+                background: `linear-gradient(to top, ${accentColor.replace(")", " / 0.7)")}, ${accentColor.replace(")", " / 0.15)")})`,
+                borderRadius: "4px",
+                outline: "none",
+                border: `1px solid ${accentColor.replace(")", " / 0.3)")}`,
+                WebkitAppearance: "slider-vertical",
+              }}
+            />
+            <span
+              className="text-[9px] font-data select-none"
+              style={{ color: accentColor }}
+            >
+              {zoomLevel.toFixed(1)}x
+            </span>
+          </div>
+        )}
+
         {/* ── Bottom HUD bar (results + scan button) ──────────────── */}
         <div
           data-ocid="hud.result_overlay"
@@ -1411,7 +1535,7 @@ export default function LiveVisionHUD({
 
           {/* Scan button row */}
           <div
-            className="flex items-center justify-between"
+            className="flex items-center gap-3 flex-wrap"
             style={{ pointerEvents: "auto" }}
           >
             <button
@@ -1449,6 +1573,27 @@ export default function LiveVisionHUD({
                 : webSearchEnabled
                   ? "INITIALIZE SCAN + SEARCH"
                   : "INITIALIZE SCAN"}
+            </button>
+
+            {/* Torch / Flash toggle */}
+            <button
+              type="button"
+              data-ocid="hud.torch_toggle"
+              onClick={() => void toggleTorch()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded text-[11px] font-data font-semibold tracking-widest uppercase transition-all duration-150 focus:outline-none focus-visible:ring-2"
+              style={{
+                position: "relative",
+                zIndex: 9999,
+                cursor: "pointer",
+                pointerEvents: "auto",
+                background: isTorchOn
+                  ? "oklch(0.72 0.18 85 / 0.9)"
+                  : "oklch(1 0 0 / 0.08)",
+                color: isTorchOn ? "oklch(0.1 0 0)" : "oklch(1 0 0 / 0.7)",
+                border: `1px solid ${isTorchOn ? "oklch(0.72 0.18 85 / 0.6)" : "oklch(1 0 0 / 0.15)"}`,
+              }}
+            >
+              {isTorchOn ? "🔦 FLASH: ON" : "🔦 FLASH: OFF"}
             </button>
 
             {scanState === "success" && (

@@ -2,8 +2,8 @@ import Principal "mo:core/Principal";
 import Map "mo:core/Map";
 import Text "mo:core/Text";
 import OutCall "http-outcalls/outcall";
-import Error "mo:core/Error";
 import Runtime "mo:core/Runtime";
+import Iter "mo:core/Iter";
 
 actor {
   public type KnowledgeDoc = {
@@ -137,8 +137,28 @@ actor {
     ];
   };
 
+  // Private helper function for JSON escaping
+  func jsonEscape(input : Text) : Text {
+    let iter = input.chars().flatMap(
+      func(char) {
+        switch (char) {
+          case ('\\') { "\\\\".chars() }; // Unicode for '\\'
+          case ('\"') { "\\\"".chars() };
+          case ('\n') { "\\n".chars() };
+          case ('\r') { "\\r".chars() };
+          case ('\t') { "\\t".chars() };
+          case (_) { Text.fromChar(char).chars() };
+        };
+      }
+    );
+    Text.fromIter(iter);
+  };
+
   public shared ({ caller }) func visionScan(imageBase64 : Text, _prompt : Text, _contextMode : Text) : async Text {
-    let jsonBody = "{\"model\":\"" # OLLAMA_VISION_MODEL # "\",\"messages\":[{\"role\":\"user\",\"content\":\"" # _prompt # "\",\"images\":[\"" # imageBase64 # "\"]}],\"stream\":false}";
+    let safePrompt = jsonEscape(_prompt);
+    let safeImage = jsonEscape(imageBase64);
+
+    let jsonBody = "{\"model\":\"" # OLLAMA_VISION_MODEL # "\",\"messages\":[{\"role\":\"user\",\"content\":\"" # safePrompt # "\",\"images\":[\"" # safeImage # "\"]}],\"stream\":false}";
     let headers : [OutCall.Header] = [
       { name = "Authorization"; value = "Bearer " # OLLAMA_API_KEY },
       { name = "Content-Type"; value = "application/json" },
@@ -146,8 +166,8 @@ actor {
     try {
       await OutCall.httpPostRequest(OLLAMA_CLOUD_ENDPOINT, headers, jsonBody, transform);
     } catch (e) {
-      let errorMessage = e.message();
-      "{\"error\":\"Vision scan failed: " # errorMessage # "\"}";
+      let safeError = jsonEscape(e.message());
+      "{\"error\":\"Vision scan failed: " # safeError # "\"}";
     };
   };
 
@@ -180,4 +200,3 @@ actor {
     };
   };
 };
-
