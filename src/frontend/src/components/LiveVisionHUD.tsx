@@ -836,10 +836,17 @@ export default function LiveVisionHUD({
         // rawResponse is plain text — use it directly
         imageDescription = rawResponse || "No response from model.";
       }
-    } catch (err) {
+    } catch (err: unknown) {
       setScanState("error");
-      const msg = err instanceof Error ? err.message : String(err);
-      setScanResult(`PHASE 1 FAILED — ${msg}`);
+      // Surface the exact error from the ICP actor or JS engine — never generic
+      const msg =
+        err instanceof Error
+          ? err.message && err.message !== "Failed to fetch"
+            ? err.message
+            : String(err)
+          : String(err);
+      console.error("[VERASLi] Phase 1 visionScan error:", err);
+      setScanResult(`PHASE 1 FAILED: ${msg}`);
       return;
     }
 

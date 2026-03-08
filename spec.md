@@ -1,34 +1,24 @@
-# VERASLi™ | Universal Specialist v2
+# VERASLi Universal Specialist v2
 
 ## Current State
+The app has a Live Vision HUD that routes Phase 1 scans through `actor.visionScan()` (Motoko HTTPS outcall to Ollama Cloud). The backend has a try/catch that returns an error JSON string on failure. The frontend checks for `"error"` in the response and throws, then the catch block surfaces the message. No direct fetch calls to Ollama exist in the frontend.
 
-The app has five enterprise sector tabs (Healthcare, Technology, Education, Construction, Mechanics) with a Live Vision HUD in the Construction tab. Phase 1 of the scan pipeline calls the Ollama vision model directly from the browser via `fetch()` to `http://localhost:11434/api/generate` using the `llava` model. This is a fully client-side call. The backend `agenticScan` function is a stub that returns placeholder text and is only used for record-keeping calls after the frontend has already completed the vision analysis. The Motoko backend already imports the `http-outcalls/outcall.mo` module.
+**Root issue identified:** The backend error JSON encoding can break with special characters in the error message (unescaped quotes, colons). The frontend catch block uses `err.message` which for ICP actor rejections may be an opaque rejection code rather than the full message string. This causes "Failed to fetch"-style generic errors.
 
 ## Requested Changes (Diff)
 
 ### Add
-
-- New Motoko function `visionScan(imageBase64: Text, prompt: Text, contextMode: Text)` that performs a server-side HTTPS POST outcall to `https://ollama.com/api/generate` with:
-  - Header: `Authorization: Bearer YOUR_API_KEY_HERE`
-  - Header: `Content-Type: application/json`
-  - Body: `{ "model": "llama3.2-vision", "prompt": "<prompt>", "images": ["<imageBase64>"], "stream": false }`
-  - Returns `Text` (the raw JSON response from Ollama Cloud)
-- New type `VisionScanResult` exposed to frontend: `{ response: Text; contextMode: Text; timestamp: Int }`
+- Nothing new.
 
 ### Modify
-
-- `main.mo`: Import and use `outcall.mo`'s `httpPostRequest` for the new `visionScan` function. The Bearer API key is hardcoded as a placeholder constant `OLLAMA_API_KEY`.
-- `LiveVisionHUD.tsx` (Phase 1): Replace the direct browser `fetch()` to localhost Ollama with a call to `actor.visionScan(base64, prompt, contextMode)`. Parse the returned JSON string client-side the same way as before (`data.response`). All downstream logic (JSON parse for detected_mode, sector lock, Phase 2 web search) remains unchanged.
-- Update `backend.d.ts` to expose `visionScan` method signature.
-- Update the HUD status label for Phase 1 from "Identifying via LLaVA..." to "Identifying via Ollama Cloud..." to reflect the new routing.
+- **Backend (main.mo)**: Harden the `visionScan` try/catch to safely escape the error message before embedding it in JSON (replace quotes and backslashes). Also include the HTTP status code from the response body when available. Return `{"error":"<safe-message>","status":"<code>"}` format.
+- **Frontend (LiveVisionHUD.tsx)**: In the Phase 1 catch block, replace `err.message` fallback with `err instanceof Error ? (err.message || String(err)) : String(err)` to ensure the full ICP rejection reason is surfaced. Also add a console.error for diagnostics. Confirm no `fetch('https://ollama.com/...')` calls exist anywhere in the file.
 
 ### Remove
-
-- The direct `fetch()` call to `${endpoint}/api/generate` (the localhost Ollama call) in `captureAndScan()`.
-- The `localStorage.getItem("verasli_ollama_endpoint")` lookup (no longer needed for Phase 1 since the call is now server-side).
+- Nothing.
 
 ## Implementation Plan
-
-1. Update `main.mo`: add `OLLAMA_API_KEY` constant, add `VisionScanResult` type, add `visionScan` public shared function that calls `OutCall.httpPostRequest` to `https://ollama.com/api/generate` with the Authorization header, prompt, and base64 image.
-2. Update `backend.d.ts`: add `visionScan` function signature.
-3. Update `LiveVisionHUD.tsx`: in `captureAndScan()`, replace the Phase 1 browser fetch block with `const rawJson = await actor.visionScan(base64, prompt, contextMode)` and parse `rawJson` as `{ response?: string }`. Update the phase label to say "Ollama Cloud". Remove the `endpoint` localStorage lookup.
+1. Fix backend: safely escape the error message string before JSON serialization in visionScan.
+2. Fix frontend: update catch block to use `String(err)` as the final fallback so the raw ICP rejection appears on the HUD.
+3. Validate (typecheck + build).
+4. Deploy.
