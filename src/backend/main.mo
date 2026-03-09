@@ -47,7 +47,7 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let GEMINI_API_KEY : Text = "AIzaSyDLqN2lPIH2SU7ptWmlqYUGCXQ170a7RBA";
+  let GEMINI_API_KEY : Text = "AIzaSyAJIULL9YGDQkM_sU_20_iloYnRCUnuRq0";
   let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" # GEMINI_API_KEY;
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
@@ -130,7 +130,7 @@ actor {
     [
       {
         title = "DuckDuckGo Search Requires TypeScript/JavaScript Client";
-        snippet = "DuckDuckGo's API returns complex JSON. Use frontend TS with fetch() for HTTP outcall and JSON deserialization. Extend to search any website, not just DuckDuckGo.";
+        snippet = "DuckDuckGo's API returns complex JSON. Use frontend TS with fetch() for HTTP outcall and JSON deserialization.";
         url = "https://api.duckduckgo.com";
       },
     ];
