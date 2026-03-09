@@ -1,8 +1,8 @@
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
 import Text "mo:core/Text";
-import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
+import Iter "mo:core/Iter";
 import OutCall "http-outcalls/outcall";
 
 actor {
@@ -47,7 +47,7 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let GEMINI_API_KEY : Text = "AIzaSyAJIULL9YGDQkM_sU_20_iloYnRCUnuRq0";
+  let GEMINI_API_KEY : Text = "AIzaSyBRAN9F7-fM4I7l9G1bcf40NdEvJQFwASE";
   let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" # GEMINI_API_KEY;
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
@@ -72,14 +72,20 @@ actor {
 
   public shared ({ caller }) func deleteKnowledgeDoc(id : Text) : async () {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) { userDocs.remove(id) };
-      case (null) { Runtime.trap("No knowledge docs found for this user") };
+      case (?userDocs) {
+        userDocs.remove(id);
+      };
+      case (null) {
+        Runtime.trap("No knowledge docs found for this user");
+      };
     };
   };
 
   public query ({ caller }) func getKnowledgeDocs() : async [KnowledgeDoc] {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) { userDocs.values().toArray() };
+      case (?userDocs) {
+        userDocs.values().toArray();
+      };
       case (null) { [] };
     };
   };
@@ -91,14 +97,20 @@ actor {
 
   public shared ({ caller }) func deleteDataRow(id : Text) : async () {
     switch (dataRows.get(caller)) {
-      case (?userRows) { userRows.remove(id) };
-      case (null) { Runtime.trap("No data rows found for this user") };
+      case (?userRows) {
+        userRows.remove(id);
+      };
+      case (null) {
+        Runtime.trap("No data rows found for this user");
+      };
     };
   };
 
   public query ({ caller }) func getDataRows() : async [DataRow] {
     switch (dataRows.get(caller)) {
-      case (?userRows) { userRows.values().toArray() };
+      case (?userRows) {
+        userRows.values().toArray();
+      };
       case (null) { [] };
     };
   };
@@ -114,14 +126,20 @@ actor {
 
   public shared ({ caller }) func deleteScanResult(id : Text) : async () {
     switch (scanResults.get(caller)) {
-      case (?userResults) { userResults.remove(id) };
-      case (null) { Runtime.trap("No scan results found for this user") };
+      case (?userResults) {
+        userResults.remove(id);
+      };
+      case (null) {
+        Runtime.trap("No scan results found for this user");
+      };
     };
   };
 
   public query ({ caller }) func getScanResults() : async [ScanResult] {
     switch (scanResults.get(caller)) {
-      case (?userResults) { userResults.values().toArray() };
+      case (?userResults) {
+        userResults.values().toArray();
+      };
       case (null) { [] };
     };
   };
@@ -162,6 +180,7 @@ actor {
 
     let jsonBody = "{\"contents\":[{\"parts\":[{\"text\":\"" # safePrompt # "\"},{\"inline_data\":{\"mime_type\":\"image/jpeg\",\"data\":\"" # safeImage # "\"}}]}]}";
     let headers : [OutCall.Header] = [{ name = "Content-Type"; value = "application/json" }];
+
     try {
       let rawBody = await OutCall.httpPostRequest(GEMINI_ENDPOINT, headers, jsonBody, transform);
       parseGeminiResponse(rawBody);
@@ -194,7 +213,7 @@ actor {
     };
   };
 
-  public shared func agenticScan(imageDescription : Text, contextMode : Text) : async AgenticResult {
+  public shared ({ caller }) func agenticScan(imageDescription : Text, contextMode : Text) : async AgenticResult {
     let keywords = getSectorKeywords(contextMode);
     {
       searchQuery = "Missing_implementation: Use " # keywords # " with OpenAI backend for contextual search";
