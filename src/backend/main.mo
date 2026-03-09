@@ -4,7 +4,9 @@ import Text "mo:core/Text";
 import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
 import OutCall "http-outcalls/outcall";
+import Migration "migration";
 
+(with migration = Migration.run)
 actor {
   public type KnowledgeDoc = {
     id : Text;
@@ -47,7 +49,7 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let GEMINI_API_KEY : Text = "AIzaSyBRAN9F7-fM4I7l9G1bcf40NdEvJQFwASE";
+  let GEMINI_API_KEY : Text = "AIzaSyB4px4mNuvUwtUdON97N0C-z4ZR6avtPb8";
   let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" # GEMINI_API_KEY;
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
