@@ -47,8 +47,8 @@ actor {
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let GEMINI_API_KEY : Text = "AIzaSyBnsAzLDQZyqzhRw4kTYqUKg9O6tNZYgnY";
-  let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" # GEMINI_API_KEY;
+  let GEMINI_API_KEY : Text = "AIzaSyDLqN2lPIH2SU7ptWmlqYUGCXQ170a7RBA";
+  let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" # GEMINI_API_KEY;
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
     OutCall.transform(input);
@@ -72,9 +72,7 @@ actor {
 
   public shared ({ caller }) func deleteKnowledgeDoc(id : Text) : async () {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) {
-        userDocs.remove(id);
-      };
+      case (?userDocs) { userDocs.remove(id) };
       case (null) { Runtime.trap("No knowledge docs found for this user") };
     };
   };
@@ -93,9 +91,7 @@ actor {
 
   public shared ({ caller }) func deleteDataRow(id : Text) : async () {
     switch (dataRows.get(caller)) {
-      case (?userRows) {
-        userRows.remove(id);
-      };
+      case (?userRows) { userRows.remove(id) };
       case (null) { Runtime.trap("No data rows found for this user") };
     };
   };
@@ -118,9 +114,7 @@ actor {
 
   public shared ({ caller }) func deleteScanResult(id : Text) : async () {
     switch (scanResults.get(caller)) {
-      case (?userResults) {
-        userResults.remove(id);
-      };
+      case (?userResults) { userResults.remove(id) };
       case (null) { Runtime.trap("No scan results found for this user") };
     };
   };
@@ -158,7 +152,6 @@ actor {
     Text.fromIter(iter);
   };
 
-  // Canned Gemini response for now keeps responses JSON for frontend
   func parseGeminiResponse(body : Text) : Text {
     body;
   };
@@ -207,7 +200,7 @@ actor {
       searchQuery = "Missing_implementation: Use " # keywords # " with OpenAI backend for contextual search";
       results = [{
         title = "Missing_implementation - browser.fetch() enables universal web search";
-        snippet = "Add more search engines beyond DuckDuckGo. Use browser fetch() for limitless search. Python module not supported for now.";
+        snippet = "Add more search engines beyond DuckDuckGo. Use browser fetch() for limitless search.";
         url = "https://motoko-search-agent-ai/";
       }];
       actionableSummary = imageDescription # "\nContext mode: " # contextMode;
