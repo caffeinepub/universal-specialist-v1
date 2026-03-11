@@ -72,4 +72,6 @@ export interface backendInterface {
     visionScan(imageBase64: string, _prompt: string, _contextMode: string): Promise<string>;
     webSearch(_query: string): Promise<Array<SearchResult>>;
     whoami(): Promise<Principal>;
+    hasGeminiKey(): Promise<boolean>;
+    setGeminiApiKey(key: string): Promise<string>;
 }

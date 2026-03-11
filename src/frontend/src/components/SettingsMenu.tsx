@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
@@ -9,13 +10,19 @@ import {
 import {
   CheckCircle2,
   Copy,
+  KeyRound,
   Loader2,
+  Lock,
   LogOut,
   Shield,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { backendInterface } from "../backend";
+
+// The Owner/Admin principal — must match ADMIN_PRINCIPAL in main.mo
+const ADMIN_PRINCIPAL =
+  "rgnf7-jhmxm-b3kih-sig4x-d7ynu-4w64f-nvuhp-wfuq7-sk5fh-b4knz-qqe";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -42,11 +49,79 @@ export default function SettingsMenu({
   const [clearSuccess, setClearSuccess] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
 
+  // ── Admin check ──────────────────────────────────────────────────────────────
+  const isAdmin = principalId === ADMIN_PRINCIPAL;
+
+  // ── API Key Management state ─────────────────────────────────────────────────
+  const [apiKey, setApiKey] = useState("");
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [keySaveMessage, setKeySaveMessage] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
+  const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null);
+
   // Truncate principal: first 8...last 4
   const truncatedPrincipal =
     principalId.length > 16
       ? `${principalId.slice(0, 8)}...${principalId.slice(-4)}`
       : principalId;
+
+  // ── Check key status on open ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!actor || !open || !isAdmin) return;
+    const a = actor as unknown as { hasGeminiKey?: () => Promise<boolean> };
+    if (typeof a.hasGeminiKey !== "function") {
+      setKeyConfigured(false);
+      return;
+    }
+    void a
+      .hasGeminiKey()
+      .then((configured) => {
+        setKeyConfigured(configured);
+      })
+      .catch(() => {
+        setKeyConfigured(false);
+      });
+  }, [actor, open, isAdmin]);
+
+  // ── Save Gemini API key ──────────────────────────────────────────────────────
+  const handleSaveKey = async () => {
+    if (!actor || !apiKey.trim()) return;
+    setIsSavingKey(true);
+    setKeySaveMessage(null);
+    try {
+      const a = actor as unknown as {
+        setGeminiApiKey?: (k: string) => Promise<string>;
+      };
+      if (typeof a.setGeminiApiKey !== "function") {
+        setKeySaveMessage({
+          text: "Key management not available on this canister version.",
+          type: "error",
+        });
+        setIsSavingKey(false);
+        return;
+      }
+      const result = await a.setGeminiApiKey(apiKey.trim());
+      if (result.startsWith("SUCCESS")) {
+        setKeySaveMessage({
+          text: "Key saved to secure canister memory.",
+          type: "success",
+        });
+        setApiKey("");
+        setKeyConfigured(true);
+      } else {
+        setKeySaveMessage({ text: result, type: "error" });
+      }
+    } catch (err: unknown) {
+      setKeySaveMessage({
+        text: err instanceof Error ? err.message : "Failed to save key.",
+        type: "error",
+      });
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
 
   // ── Copy principal to clipboard ──────────────────────────────────────────────
   const handleCopyPrincipal = async () => {
@@ -66,7 +141,6 @@ export default function SettingsMenu({
 
     if (!isClearConfirming) {
       setIsClearConfirming(true);
-      // Auto-reset confirmation after 4 seconds
       setTimeout(() => setIsClearConfirming(false), 4000);
       return;
     }
@@ -100,7 +174,7 @@ export default function SettingsMenu({
       <SheetContent
         data-ocid="settings.sheet"
         side="right"
-        className="w-full sm:max-w-[360px] flex flex-col gap-0 p-0 border-l border-border overflow-y-auto"
+        className="w-full sm:max-w-[360px] flex flex-col gap-0 p-0 border-l border-border overflow-y-auto z-[99999]"
         style={{ background: "oklch(var(--surface))" }}
       >
         {/* ── Sheet Header ──────────────────────────────────────────────── */}
@@ -135,6 +209,18 @@ export default function SettingsMenu({
               <span className="text-[10px] font-data text-muted-foreground tracking-widest uppercase font-semibold">
                 Identity
               </span>
+              {isAdmin && (
+                <span
+                  className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-data font-semibold tracking-widest border"
+                  style={{
+                    background: "oklch(0.55 0.18 260 / 0.12)",
+                    color: "oklch(0.72 0.18 260)",
+                    borderColor: "oklch(0.55 0.18 260 / 0.3)",
+                  }}
+                >
+                  OWNER / ADMIN
+                </span>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -183,7 +269,151 @@ export default function SettingsMenu({
 
           <Separator className="bg-border/60" />
 
-          {/* SECTION 2: Data Management */}
+          {/* SECTION 2: API Configuration — Admin only */}
+          {isAdmin ? (
+            <section
+              className="px-5 py-5"
+              data-ocid="settings.api_config_section"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <KeyRound className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                <span className="text-[10px] font-data text-muted-foreground tracking-widest uppercase font-semibold">
+                  API Configuration
+                </span>
+                <span
+                  className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-data font-semibold tracking-widest border"
+                  style={{
+                    background: "oklch(0.55 0.18 145 / 0.10)",
+                    color: "oklch(0.68 0.18 145)",
+                    borderColor: "oklch(0.55 0.18 145 / 0.25)",
+                  }}
+                >
+                  ADMIN ONLY
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {/* Key status indicator */}
+                <div className="flex items-center gap-2">
+                  {keyConfigured === null ? (
+                    <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground" />
+                  ) : (
+                    <span
+                      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                      style={{
+                        background: keyConfigured
+                          ? "oklch(0.72 0.18 145)"
+                          : "oklch(0.78 0.17 65)",
+                      }}
+                    />
+                  )}
+                  <span
+                    className="text-[11px] font-data"
+                    style={{
+                      color:
+                        keyConfigured === null
+                          ? undefined
+                          : keyConfigured
+                            ? "oklch(0.72 0.18 145)"
+                            : "oklch(0.78 0.17 65)",
+                    }}
+                  >
+                    {keyConfigured === null
+                      ? "Checking key status..."
+                      : keyConfigured
+                        ? "Gemini Key: CONFIGURED"
+                        : "Gemini Key: NOT SET"}
+                  </span>
+                </div>
+
+                {/* Key input */}
+                <div className="space-y-2">
+                  <p className="text-[10px] font-data text-muted-foreground uppercase tracking-wider">
+                    Gemini API Key
+                  </p>
+                  <Input
+                    type="password"
+                    data-ocid="settings.api_key_input"
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setKeySaveMessage(null);
+                    }}
+                    placeholder="Paste Gemini API key here..."
+                    className="font-data text-xs h-9 border-border focus-visible:ring-primary/30"
+                    style={{ background: "oklch(var(--surface-raised))" }}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+
+                  {/* Save button */}
+                  <button
+                    type="button"
+                    data-ocid="settings.save_key_button"
+                    onClick={() => void handleSaveKey()}
+                    disabled={isSavingKey || !apiKey.trim() || !actor}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/10 hover:text-primary transition-all duration-150 text-muted-foreground font-medium text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary/50 disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    {isSavingKey ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-3.5 h-3.5" />
+                    )}
+                    {isSavingKey ? "SAVING..." : "SAVE"}
+                  </button>
+                </div>
+
+                {/* Save feedback */}
+                {keySaveMessage && (
+                  <p
+                    className="text-[11px] font-data leading-snug"
+                    data-ocid={
+                      keySaveMessage.type === "success"
+                        ? "settings.key_success_state"
+                        : "settings.key_error_state"
+                    }
+                    style={{
+                      color:
+                        keySaveMessage.type === "success"
+                          ? "oklch(0.72 0.18 145)"
+                          : "oklch(0.65 0.22 25)",
+                    }}
+                  >
+                    {keySaveMessage.text}
+                  </p>
+                )}
+
+                {/* Security note */}
+                <p className="text-[9px] font-data text-muted-foreground/60 leading-relaxed">
+                  Your key is stored in canister memory only — never in source
+                  code or chat history. Used for all Gemini vision scans.
+                </p>
+              </div>
+            </section>
+          ) : (
+            /* Non-admin: show a locked placeholder so the section is visible but not editable */
+            <section className="px-5 py-5">
+              <div className="flex items-center gap-2 mb-3">
+                <KeyRound className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />
+                <span className="text-[10px] font-data text-muted-foreground/40 tracking-widest uppercase font-semibold">
+                  API Configuration
+                </span>
+              </div>
+              <div
+                className="flex items-center gap-2.5 px-3 py-3 rounded-lg border border-border/40"
+                style={{ background: "oklch(var(--surface-raised) / 0.5)" }}
+              >
+                <Lock className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />
+                <p className="text-[11px] font-data text-muted-foreground/50 leading-relaxed">
+                  Restricted to Owner/Admin account.
+                </p>
+              </div>
+            </section>
+          )}
+
+          <Separator className="bg-border/60" />
+
+          {/* SECTION 3: Data Management */}
           <section className="px-5 py-5">
             <div className="flex items-center gap-2 mb-3">
               <Trash2 className="w-3 h-3 text-muted-foreground flex-shrink-0" />
@@ -260,7 +490,7 @@ export default function SettingsMenu({
 
           <Separator className="bg-border/60" />
 
-          {/* SECTION 3: Session */}
+          {/* SECTION 4: Session */}
           <section className="px-5 py-5">
             <div className="flex items-center gap-2 mb-3">
               <LogOut className="w-3 h-3 text-muted-foreground flex-shrink-0" />

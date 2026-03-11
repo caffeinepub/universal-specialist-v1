@@ -242,3 +242,11 @@
     opacity: 1;
   }
 }
+
+/* ─── Sheet overlay z-index override (above camera HUD) ──────────────────────── */
+[data-radix-popper-content-wrapper],
+[data-radix-dialog-overlay],
+[vaul-overlay],
+[data-state][role="dialog"] {
+  z-index: 99999 !important;
+}

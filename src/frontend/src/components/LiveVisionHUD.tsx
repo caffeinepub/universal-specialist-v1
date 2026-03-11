@@ -532,7 +532,7 @@ function HistoryItem({ result, index, onDelete }: HistoryItemProps) {
   return (
     <div
       data-ocid={`hud.history_item.${index}`}
-      className="border border-border bg-card rounded-lg p-4 space-y-2 hover:bg-surface-raised transition-colors duration-150"
+      className="border border-border bg-card rounded-lg p-2.5 space-y-1.5 hover:bg-surface-raised transition-colors duration-150"
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
@@ -555,7 +555,7 @@ function HistoryItem({ result, index, onDelete }: HistoryItemProps) {
             </span>
           </div>
           {result.thumbnailSummary && (
-            <div className="text-xs font-medium text-muted-foreground mb-1 font-data">
+            <div className="text-[10px] font-medium text-muted-foreground mb-1 font-data">
               {result.thumbnailSummary}
             </div>
           )}

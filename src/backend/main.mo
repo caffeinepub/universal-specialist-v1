@@ -5,8 +5,6 @@ import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
 import OutCall "http-outcalls/outcall";
 
-
-
 actor {
   public type KnowledgeDoc = {
     id : Text;
@@ -45,16 +43,45 @@ actor {
     timestamp : Int;
   };
 
+  // ── Admin / Owner ────────────────────────────────────────────────────────────
+  // The Owner principal is permanently assigned as the admin for this canister.
+  // Only this principal may call setGeminiApiKey.
+  let ADMIN_PRINCIPAL : Principal = Principal.fromText("rgnf7-jhmxm-b3kih-sig4x-d7ynu-4w64f-nvuhp-wfuq7-sk5fh-b4knz-qqe");
+
   let knowledgeDocs = Map.empty<Principal, Map.Map<Text, KnowledgeDoc>>();
   let dataRows = Map.empty<Principal, Map.Map<Text, DataRow>>();
   let scanResults = Map.empty<Principal, Map.Map<Text, ScanResult>>();
 
-  let GEMINI_API_KEY : Text = "AIzaSyB4px4mNuvUwtUdON97N0C-z4ZR6avtPb8";
-  let GEMINI_ENDPOINT : Text = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" # GEMINI_API_KEY;
+  // Retained for upgrade compatibility with previous canister versions
+  stable var GEMINI_API_KEY : Text = "";
+  stable var GEMINI_ENDPOINT : Text = "";
+
+  // Active vault variable — set via setGeminiApiKey from the Settings UI
+  stable var geminiApiKey : Text = "AIzaSyAcs_gTJtZ_LZAC_gTMQ6Eyj3eY92PtTTI";
+
+  // Permanently set to gemini-2.5-flash — do not revert to 1.5
+  let GEMINI_MODEL : Text = "gemini-2.5-flash";
 
   public query func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
     OutCall.transform(input);
   };
+
+  // ── API Key Vault ────────────────────────────────────────────────────────────
+
+  // Only the admin principal (Owner) may update the Gemini API key.
+  public shared ({ caller }) func setGeminiApiKey(key : Text) : async Text {
+    if (caller != ADMIN_PRINCIPAL) {
+      return "ERROR: Access denied. Only the Owner/Admin can set the API key.";
+    };
+    geminiApiKey := key;
+    "SUCCESS: Key saved to secure canister memory.";
+  };
+
+  public query func hasGeminiKey() : async Bool {
+    geminiApiKey != "";
+  };
+
+  // ── User data helpers ────────────────────────────────────────────────────────────
 
   func getOrCreateUser<K, V>(store : Map.Map<Principal, Map.Map<K, V>>, user : Principal) : Map.Map<K, V> {
     switch (store.get(user)) {
@@ -74,20 +101,14 @@ actor {
 
   public shared ({ caller }) func deleteKnowledgeDoc(id : Text) : async () {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) {
-        userDocs.remove(id);
-      };
-      case (null) {
-        Runtime.trap("No knowledge docs found for this user");
-      };
+      case (?userDocs) { userDocs.remove(id) };
+      case (null) { Runtime.trap("No knowledge docs found for this user") };
     };
   };
 
   public query ({ caller }) func getKnowledgeDocs() : async [KnowledgeDoc] {
     switch (knowledgeDocs.get(caller)) {
-      case (?userDocs) {
-        userDocs.values().toArray();
-      };
+      case (?userDocs) { userDocs.values().toArray() };
       case (null) { [] };
     };
   };
@@ -99,20 +120,14 @@ actor {
 
   public shared ({ caller }) func deleteDataRow(id : Text) : async () {
     switch (dataRows.get(caller)) {
-      case (?userRows) {
-        userRows.remove(id);
-      };
-      case (null) {
-        Runtime.trap("No data rows found for this user");
-      };
+      case (?userRows) { userRows.remove(id) };
+      case (null) { Runtime.trap("No data rows found for this user") };
     };
   };
 
   public query ({ caller }) func getDataRows() : async [DataRow] {
     switch (dataRows.get(caller)) {
-      case (?userRows) {
-        userRows.values().toArray();
-      };
+      case (?userRows) { userRows.values().toArray() };
       case (null) { [] };
     };
   };
@@ -128,20 +143,14 @@ actor {
 
   public shared ({ caller }) func deleteScanResult(id : Text) : async () {
     switch (scanResults.get(caller)) {
-      case (?userResults) {
-        userResults.remove(id);
-      };
-      case (null) {
-        Runtime.trap("No scan results found for this user");
-      };
+      case (?userResults) { userResults.remove(id) };
+      case (null) { Runtime.trap("No scan results found for this user") };
     };
   };
 
   public query ({ caller }) func getScanResults() : async [ScanResult] {
     switch (scanResults.get(caller)) {
-      case (?userResults) {
-        userResults.values().toArray();
-      };
+      case (?userResults) { userResults.values().toArray() };
       case (null) { [] };
     };
   };
@@ -177,6 +186,11 @@ actor {
   };
 
   public shared ({ caller }) func visionScan(imageBase64 : Text, _prompt : Text, _contextMode : Text) : async Text {
+    if (geminiApiKey == "") {
+      return "GEMINI API ERROR: API key not configured. Please set it in Settings.";
+    };
+    // Permanently uses gemini-2.5-flash via v1beta/generateContent
+    let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" # GEMINI_MODEL # ":generateContent?key=" # geminiApiKey;
     let safePrompt = jsonEscape(_prompt);
     let safeImage = jsonEscape(imageBase64);
 
@@ -184,7 +198,7 @@ actor {
     let headers : [OutCall.Header] = [{ name = "Content-Type"; value = "application/json" }];
 
     try {
-      let rawBody = await OutCall.httpPostRequest(GEMINI_ENDPOINT, headers, jsonBody, transform);
+      let rawBody = await OutCall.httpPostRequest(endpoint, headers, jsonBody, transform);
       parseGeminiResponse(rawBody);
     } catch (e) {
       let safeError = jsonEscape(e.message());

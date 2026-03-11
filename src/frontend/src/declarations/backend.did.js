@@ -67,9 +67,11 @@ export const idlService = IDL.Service({
   'getDataRows' : IDL.Func([], [IDL.Vec(DataRow)], ['query']),
   'getKnowledgeDocs' : IDL.Func([], [IDL.Vec(KnowledgeDoc)], ['query']),
   'getScanResults' : IDL.Func([], [IDL.Vec(ScanResult)], ['query']),
+  'hasGeminiKey' : IDL.Func([], [IDL.Bool], ['query']),
   'saveDataRow' : IDL.Func([DataRow], [], []),
   'saveKnowledgeDoc' : IDL.Func([KnowledgeDoc], [], []),
   'saveScanResult' : IDL.Func([ScanResult], [], []),
+  'setGeminiApiKey' : IDL.Func([IDL.Text], [IDL.Text], []),
   'transform' : IDL.Func(
       [TransformationInput],
       [TransformationOutput],
@@ -139,9 +141,11 @@ export const idlFactory = ({ IDL }) => {
     'getDataRows' : IDL.Func([], [IDL.Vec(DataRow)], ['query']),
     'getKnowledgeDocs' : IDL.Func([], [IDL.Vec(KnowledgeDoc)], ['query']),
     'getScanResults' : IDL.Func([], [IDL.Vec(ScanResult)], ['query']),
+    'hasGeminiKey' : IDL.Func([], [IDL.Bool], ['query']),
     'saveDataRow' : IDL.Func([DataRow], [], []),
     'saveKnowledgeDoc' : IDL.Func([KnowledgeDoc], [], []),
     'saveScanResult' : IDL.Func([ScanResult], [], []),
+    'setGeminiApiKey' : IDL.Func([IDL.Text], [IDL.Text], []),
     'transform' : IDL.Func(
         [TransformationInput],
         [TransformationOutput],

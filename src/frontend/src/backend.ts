@@ -147,9 +147,11 @@ export interface backendInterface {
     getDataRows(): Promise<Array<DataRow>>;
     getKnowledgeDocs(): Promise<Array<KnowledgeDoc>>;
     getScanResults(): Promise<Array<ScanResult>>;
+    hasGeminiKey(): Promise<boolean>;
     saveDataRow(row: DataRow): Promise<void>;
     saveKnowledgeDoc(doc: KnowledgeDoc): Promise<void>;
     saveScanResult(result: ScanResult): Promise<void>;
+    setGeminiApiKey(key: string): Promise<string>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     visionScan(imageBase64: string, _prompt: string, _contextMode: string): Promise<string>;
     webSearch(_query: string): Promise<Array<SearchResult>>;
@@ -255,6 +257,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async hasGeminiKey(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.hasGeminiKey();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.hasGeminiKey();
+            return result;
+        }
+    }
     async saveDataRow(arg0: DataRow): Promise<void> {
         if (this.processError) {
             try {
@@ -294,6 +310,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.saveScanResult(arg0);
+            return result;
+        }
+    }
+    async setGeminiApiKey(arg0: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setGeminiApiKey(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setGeminiApiKey(arg0);
             return result;
         }
     }
